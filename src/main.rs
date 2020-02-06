@@ -1,6 +1,7 @@
 extern crate termion;
 
-use std::io::{stdin, stdout, Write};
+use termion::raw::RawTerminal;
+use std::io::{stdin, stdout, Stdout, Write};
 use termion::clear;
 use termion::cursor;
 use termion::event::Key;
@@ -82,14 +83,12 @@ impl Cursor {
 
 fn main() {
     let mut stdin = stdin().keys();
-    let mut stdout = stdout().into_raw_mode().unwrap();
+    let stdout = &mut stdout().into_raw_mode().expect("Failed to set tty to raw mode");
     let line_buffer = &mut LineBuffer::new();
     let cursor = &mut Cursor::new();
     
-    print!("{}{}", termion::clear::All, termion::cursor::Goto(1, 1));
-    stdout.flush().unwrap();
-
     loop {
+        render(stdout, line_buffer, cursor);
         let input = stdin.next();
         if let Some(Ok(key)) = input
         {
@@ -156,16 +155,15 @@ fn main() {
             }
 
 
-            write!(stdout, "{}", clear::All);
-            for row_index in 0..(&line_buffer.lines).len() {
-                write!(stdout, "{}", cursor::Goto(1, (row_index + 1) as u16));
-                for character in &line_buffer.lines[row_index].character_buffer {
-                    print!("{}", character);
-                }
-                stdout.flush().unwrap();
-            }
-            write!(stdout, "{}", cursor::Goto((cursor.column + 1) as u16, (cursor.row + 1) as u16));
-            stdout.flush().unwrap();
+fn render(stdout: &mut RawTerminal<Stdout>, line_buffer: &LineBuffer, cursor: &Cursor) {
+    write!(stdout, "{}", clear::All);
+    for row_index in 0..(&line_buffer.lines).len() {
+        write!(stdout, "{}", cursor::Goto(1, (row_index + 1) as u16));
+        for character in &line_buffer.lines[row_index].character_buffer {
+            print!("{}", character);
         }
+        stdout.flush().unwrap();
     }
+    write!(stdout, "{}", cursor::Goto((cursor.column + 1) as u16, (cursor.row + 1) as u16));
+    stdout.flush().unwrap();
 }
