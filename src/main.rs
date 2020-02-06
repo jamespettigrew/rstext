@@ -154,6 +154,11 @@ fn main() {
                 _ => ()
             }
 
+        }
+    }
+
+    stdout.suspend_raw_mode().expect("Failed to restore tty to original state.");
+}
 
 fn render(stdout: &mut RawTerminal<Stdout>, line_buffer: &LineBuffer, cursor: &Cursor) {
     write!(stdout, "{}", clear::All);
