@@ -359,7 +359,12 @@ fn render(screen: &mut impl Write, line_buffer: &LineBuffer, cursor: &Cursor) {
 
     let (terminal_width, terminal_height) =
         termion::terminal_size().expect("Failed to get terminal size.");
-    let line_number_columns = (line_buffer.lines.len().to_string().len() + 1) as u16;
+
+    // Number of columns the display of line numbers will require: max(3, num_digits) + 1 space
+    let min_line_number_columns = 3usize;
+    let line_number_digits = line_buffer.lines.len().to_string().len();
+    let line_number_columns = (std::cmp::max(min_line_number_columns, line_number_digits) + 1) as u16;
+
     let window = &mut Window::new(terminal_height, terminal_width - line_number_columns, 0, 0);
     window.update_offsets_for_cursor(cursor);
 
@@ -369,16 +374,18 @@ fn render(screen: &mut impl Write, line_buffer: &LineBuffer, cursor: &Cursor) {
         .enumerate()
         .skip(window.vertical_offset)
         .take(window.height as usize);
+
     let mut row_count = 0;
     for (row_index, line) in line_iter {
         write!(screen, "{}", cursor::Goto(1, (row_count + 1) as u16));
         write!(
             screen,
-            "{}{}{}{}",
+            "{}{:>min_width$}{}{}",
             color::Fg(color::Blue),
-            row_index + 1,
+            (row_index + 1).to_string(),
             color::Fg(color::Reset),
-            " "
+            " ",
+            min_width = min_line_number_columns
         );
 
         write!(
