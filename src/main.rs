@@ -193,13 +193,9 @@ fn main() {
     let stdout = &mut stdout().into_raw_mode().expect("Failed to set tty to raw mode");
     let line_buffer = &mut LineBuffer::new();
     let cursor = &mut Cursor::new();
-
-    let (terminal_width, terminal_height) = termion::terminal_size().expect("Failed to get terminal size.");
-    let window = &mut Window::new(terminal_height, terminal_width - 2, 0, 0);
     
     loop {
-        window.update_offsets_for_cursor(cursor);
-        render(stdout, line_buffer, cursor, window);
+        render(stdout, line_buffer, cursor);
 
         let input = stdin.next();
         if let Some(Ok(key)) = input
@@ -320,16 +316,21 @@ fn main() {
     stdout.suspend_raw_mode().expect("Failed to restore tty to original state.");
 }
 
-fn render(stdout: &mut RawTerminal<Stdout>, line_buffer: &LineBuffer, cursor: &Cursor, window: &Window) {
+fn render(stdout: &mut RawTerminal<Stdout>, line_buffer: &LineBuffer, cursor: &Cursor) {
     write!(stdout, "{}", clear::All);
 
+    let (terminal_width, terminal_height) = termion::terminal_size().expect("Failed to get terminal size.");
+    let line_number_columns = (line_buffer.lines.len().to_string().len() + 1) as u16;
+    let window = &mut Window::new(terminal_height, terminal_width - line_number_columns, 0, 0);
+    window.update_offsets_for_cursor(cursor);
+    
     let line_iter = line_buffer.lines.iter().enumerate().skip(window.vertical_offset).take(window.height as usize);
     let mut row_count = 0;
     for (row_index, line) in line_iter {
         write!(stdout, "{}", cursor::Goto(1, (row_count + 1) as u16));
         write!(stdout, "{}{}{}{}", color::Fg(color::Blue), row_index + 1, color::Fg(color::Reset), " ");
 
-        write!(stdout, "{}", cursor::Goto(3, (row_count + 1) as u16));
+        write!(stdout, "{}", cursor::Goto(line_number_columns + 1, (row_count + 1) as u16));
         let character_iter = line.character_buffer.iter().skip(window.horizontal_offset).take(window.width as usize);
         for character in character_iter {
             write!(stdout, "{}", character);
@@ -339,7 +340,7 @@ fn render(stdout: &mut RawTerminal<Stdout>, line_buffer: &LineBuffer, cursor: &C
     }
 
     let virtual_cursor_row = cursor.row - window.vertical_offset + 1;
-    let virtual_cursor_column = 2 + (cursor.column - window.horizontal_offset + 1);
-    write!(stdout, "{}", cursor::Goto(virtual_cursor_column as u16, virtual_cursor_row as u16));
+    let virtual_cursor_column = line_number_columns + ((cursor.column - window.horizontal_offset + 1) as u16);
+    write!(stdout, "{}", cursor::Goto(virtual_cursor_column, virtual_cursor_row as u16));
     stdout.flush().unwrap();
 }
