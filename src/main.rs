@@ -1,12 +1,11 @@
 extern crate termion;
 
-use termion::raw::RawTerminal;
 use std::io::{stdin, stdout, Stdout, Write};
-use termion::clear;
-use termion::cursor;
+use termion::{ clear, color, cursor };
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
+use termion::raw::RawTerminal;
 
 struct Line {
     character_buffer: Vec<char>
@@ -120,15 +119,6 @@ enum VerticalMove {
     Down(usize)
 }
 
-impl VerticalMove {
-    fn from_delta(delta: isize) -> VerticalMove {
-        if delta < 0 {
-            VerticalMove::Up(delta.abs() as usize)
-        } else {
-            VerticalMove::Down(delta.abs() as usize)
-        }
-    }
-}
 enum HorizontalMove {
     Left(usize),
     Right(usize)
@@ -205,7 +195,7 @@ fn main() {
     let cursor = &mut Cursor::new();
 
     let (terminal_width, terminal_height) = termion::terminal_size().expect("Failed to get terminal size.");
-    let window = &mut Window::new(terminal_height, terminal_width, 0, 0);
+    let window = &mut Window::new(terminal_height, terminal_width - 2, 0, 0);
     
     loop {
         window.update_offsets_for_cursor(cursor);
@@ -324,7 +314,6 @@ fn main() {
                 },
                 _ => ()
             }
-
         }
     }
 
@@ -334,17 +323,23 @@ fn main() {
 fn render(stdout: &mut RawTerminal<Stdout>, line_buffer: &LineBuffer, cursor: &Cursor, window: &Window) {
     write!(stdout, "{}", clear::All);
 
-    let line_iter = line_buffer.lines.iter().skip(window.vertical_offset).enumerate().take(window.height as usize);
-    for (row_count, line) in line_iter {
+    let line_iter = line_buffer.lines.iter().enumerate().skip(window.vertical_offset).take(window.height as usize);
+    let mut row_count = 0;
+    for (row_index, line) in line_iter {
         write!(stdout, "{}", cursor::Goto(1, (row_count + 1) as u16));
+        write!(stdout, "{}{}{}{}", color::Fg(color::Blue), row_index + 1, color::Fg(color::Reset), " ");
+
+        write!(stdout, "{}", cursor::Goto(3, (row_count + 1) as u16));
         let character_iter = line.character_buffer.iter().skip(window.horizontal_offset).take(window.width as usize);
         for character in character_iter {
             write!(stdout, "{}", character);
         }
+
+        row_count += 1;
     }
 
     let virtual_cursor_row = cursor.row - window.vertical_offset + 1;
-    let virtual_cursor_column = cursor.column - window.horizontal_offset + 1;
+    let virtual_cursor_column = 2 + (cursor.column - window.horizontal_offset + 1);
     write!(stdout, "{}", cursor::Goto(virtual_cursor_column as u16, virtual_cursor_row as u16));
     stdout.flush().unwrap();
 }
