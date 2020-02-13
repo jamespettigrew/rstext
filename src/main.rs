@@ -199,9 +199,10 @@ fn main() {
 
     let line_buffer = &mut LineBuffer::new();
     let cursor = &mut Cursor::new();
+    let window = &mut Window::new(0, 0, 0, 0,);
 
     loop {
-        render(screen, line_buffer, cursor);
+        render(screen, line_buffer, cursor, window);
 
         let input = stdin.next();
         if let Some(Ok(key)) = input {
@@ -354,7 +355,7 @@ fn main() {
         .expect("Failed to restore tty to original state.");
 }
 
-fn render(screen: &mut impl Write, line_buffer: &LineBuffer, cursor: &Cursor) {
+fn render(screen: &mut impl Write, line_buffer: &LineBuffer, cursor: &Cursor, window: &mut Window) {
     write!(screen, "{}", clear::All);
 
     let (terminal_width, terminal_height) =
@@ -365,7 +366,7 @@ fn render(screen: &mut impl Write, line_buffer: &LineBuffer, cursor: &Cursor) {
     let line_number_digits = line_buffer.lines.len().to_string().len();
     let line_number_columns = (std::cmp::max(min_line_number_columns, line_number_digits) + 1) as u16;
 
-    let window = &mut Window::new(terminal_height, terminal_width - line_number_columns, 0, 0);
+    window.resize(terminal_height, terminal_width - line_number_columns);
     window.update_offsets_for_cursor(cursor);
 
     let line_iter = line_buffer
