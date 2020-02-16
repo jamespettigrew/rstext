@@ -1,11 +1,14 @@
-extern crate termion;
+use std::io::{stdout, Write};
 
-use std::io::{stdin, stdout, Write};
-use termion::event::Key;
-use termion::input::{MouseTerminal, TermRead};
-use termion::raw::IntoRawMode;
-use termion::screen::AlternateScreen;
-use termion::{clear, color, cursor};
+use crossterm::{
+    cursor::MoveTo,
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    execute, queue, style,
+    style::Color,
+    terminal,
+    terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+    Result,
+};
 
 struct Line {
     character_buffer: Vec<char>,
@@ -189,26 +192,29 @@ impl Window {
     }
 }
 
-fn main() {
-    let mut stdin = stdin().keys();
-    let raw_stdout = stdout()
-        .into_raw_mode()
-        .expect("Failed to set tty to raw mode");
-    let screen = AlternateScreen::from(raw_stdout); // Ensure restoration of tty settings after exit
-    let screen = &mut MouseTerminal::from(screen); // Disables scrolling
+fn main() -> Result<()> {
+    execute!(stdout(), EnterAlternateScreen)?;
+    terminal::enable_raw_mode()?;
 
     let line_buffer = &mut LineBuffer::new();
     let cursor = &mut Cursor::new();
-    let window = &mut Window::new(0, 0, 0, 0,);
+    let window = &mut Window::new(0, 0, 0, 0);
+
+    let screen = &mut stdout();
 
     loop {
         render(screen, line_buffer, cursor, window);
 
-        let input = stdin.next();
-        if let Some(Ok(key)) = input {
-            match key {
-                Key::Ctrl('q') => break,
-                Key::Backspace => {
+        if let Ok(Event::Key(event)) = event::read() {
+            match event {
+                KeyEvent {
+                    code: KeyCode::Char('q'),
+                    modifiers: KeyModifiers::CONTROL,
+                } => break,
+                KeyEvent {
+                    code: KeyCode::Backspace,
+                    modifiers: _,
+                } => {
                     if cursor.column == 0 && cursor.row > 0 {
                         let current_line = &mut line_buffer
                             .line_at(cursor.row)
@@ -239,36 +245,43 @@ fn main() {
                         current_line.remove_character_at(cursor.column);
                     }
                 }
-                Key::Char(c) => {
-                    if c == '\n' {
-                        let current_line = line_buffer
-                            .line_at_mut(cursor.row)
-                            .expect("Missing expected line.");
-                        let mut new_line = Line::new();
-                        let characters_to_eol =
-                            current_line.character_buffer.drain(cursor.column..);
-                        new_line.character_buffer.extend(characters_to_eol);
+                KeyEvent {
+                    code: KeyCode::Enter,
+                    modifiers: _,
+                } => {
+                    let current_line = line_buffer
+                        .line_at_mut(cursor.row)
+                        .expect("Missing expected line.");
+                    let mut new_line = Line::new();
+                    let characters_to_eol = current_line.character_buffer.drain(cursor.column..);
+                    new_line.character_buffer.extend(characters_to_eol);
 
-                        let column_delta = 0 - (cursor.column as isize);
-                        let cursor_move = CursorMove {
-                            vertical: Some(VerticalMove::Down(1)),
-                            horizontal: HorizontalMove::from_delta(column_delta),
-                        };
-                        cursor.moved(cursor_move);
-                        line_buffer.insert_line_at(new_line, cursor.row);
-                    } else {
-                        let current_line = line_buffer
-                            .line_at_mut(cursor.row)
-                            .expect("Missing expected line.");
-                        current_line.insert_character_at(c, cursor.column);
-                        let cursor_move = CursorMove {
-                            vertical: None,
-                            horizontal: Some(HorizontalMove::Right(1)),
-                        };
-                        cursor.moved(cursor_move);
-                    }
+                    let column_delta = 0 - (cursor.column as isize);
+                    let cursor_move = CursorMove {
+                        vertical: Some(VerticalMove::Down(1)),
+                        horizontal: HorizontalMove::from_delta(column_delta),
+                    };
+                    cursor.moved(cursor_move);
+                    line_buffer.insert_line_at(new_line, cursor.row);
                 }
-                Key::Up => {
+                KeyEvent {
+                    code: KeyCode::Char(c),
+                    modifiers: _,
+                } => {
+                    let current_line = line_buffer
+                        .line_at_mut(cursor.row)
+                        .expect("Missing expected line.");
+                    current_line.insert_character_at(c, cursor.column);
+                    let cursor_move = CursorMove {
+                        vertical: None,
+                        horizontal: Some(HorizontalMove::Right(1)),
+                    };
+                    cursor.moved(cursor_move);
+                }
+                KeyEvent {
+                    code: KeyCode::Up,
+                    modifiers: _,
+                } => {
                     if cursor.row > 0 {
                         let line_above = line_buffer
                             .line_at(cursor.row - 1)
@@ -288,7 +301,10 @@ fn main() {
                         cursor.moved(cursor_move);
                     }
                 }
-                Key::Down => {
+                KeyEvent {
+                    code: KeyCode::Down,
+                    modifiers: _,
+                } => {
                     if cursor.row < line_buffer.lines.len() - 1 {
                         let line_below = line_buffer
                             .line_at(cursor.row + 1)
@@ -308,7 +324,10 @@ fn main() {
                         cursor.moved(cursor_move);
                     }
                 }
-                Key::Left => {
+                KeyEvent {
+                    code: KeyCode::Left,
+                    modifiers: _,
+                } => {
                     if cursor.column > 0 {
                         cursor.moved(CursorMove {
                             vertical: None,
@@ -327,7 +346,10 @@ fn main() {
                         cursor.moved(cursor_move);
                     }
                 }
-                Key::Right => {
+                KeyEvent {
+                    code: KeyCode::Right,
+                    modifiers: _,
+                } => {
                     let current_line = line_buffer
                         .line_at(cursor.row)
                         .expect("Missing expected line.");
@@ -350,21 +372,21 @@ fn main() {
         }
     }
 
-    screen
-        .suspend_raw_mode()
-        .expect("Failed to restore tty to original state.");
+    execute!(stdout(), LeaveAlternateScreen)?;
+    terminal::disable_raw_mode()
 }
 
 fn render(screen: &mut impl Write, line_buffer: &LineBuffer, cursor: &Cursor, window: &mut Window) {
-    write!(screen, "{}", clear::All);
+    queue!(screen, Clear(ClearType::All));
 
     let (terminal_width, terminal_height) =
-        termion::terminal_size().expect("Failed to get terminal size.");
+        terminal::size().expect("Failed to get terminal size.");
 
     // Number of columns the display of line numbers will require: max(3, num_digits) + 1 space
     let min_line_number_columns = 3usize;
     let line_number_digits = line_buffer.lines.len().to_string().len();
-    let line_number_columns = (std::cmp::max(min_line_number_columns, line_number_digits) + 1) as u16;
+    let line_number_columns =
+        (std::cmp::max(min_line_number_columns, line_number_digits) + 1) as u16;
 
     window.resize(terminal_height, terminal_width - line_number_columns);
     window.update_offsets_for_cursor(cursor);
@@ -378,41 +400,37 @@ fn render(screen: &mut impl Write, line_buffer: &LineBuffer, cursor: &Cursor, wi
 
     let mut row_count = 0;
     for (row_index, line) in line_iter {
-        write!(screen, "{}", cursor::Goto(1, (row_count + 1) as u16));
-        write!(
+        queue!(
             screen,
-            "{}{:>min_width$}{}{}",
-            color::Fg(color::Blue),
-            (row_index + 1).to_string(),
-            color::Fg(color::Reset),
-            " ",
-            min_width = min_line_number_columns
+            MoveTo(0, row_count as u16),
+            style::SetForegroundColor(Color::Blue),
+            style::Print(format!(
+                "{:>min_width$}",
+                row_index + 1,
+                min_width = min_line_number_columns
+            )),
+            style::ResetColor,
+            MoveTo(line_number_columns, row_count as u16)
         );
 
-        write!(
-            screen,
-            "{}",
-            cursor::Goto(line_number_columns + 1, (row_count + 1) as u16)
-        );
         let character_iter = line
             .character_buffer
             .iter()
             .skip(window.horizontal_offset)
             .take(window.width as usize);
         for character in character_iter {
-            write!(screen, "{}", character);
+            queue!(screen, style::Print(character));
         }
 
         row_count += 1;
     }
 
-    let virtual_cursor_row = cursor.row - window.vertical_offset + 1;
+    let virtual_cursor_row = cursor.row - window.vertical_offset;
     let virtual_cursor_column =
-        line_number_columns + ((cursor.column - window.horizontal_offset + 1) as u16);
-    write!(
+        line_number_columns + ((cursor.column - window.horizontal_offset) as u16);
+    queue!(
         screen,
-        "{}",
-        cursor::Goto(virtual_cursor_column, virtual_cursor_row as u16)
+        MoveTo(virtual_cursor_column, virtual_cursor_row as u16)
     );
     screen.flush().unwrap();
 }
