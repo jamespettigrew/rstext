@@ -1,5 +1,7 @@
 use std::io::{stdout, Write};
 
+mod piece_table;
+
 use crossterm::{
     cursor::MoveTo,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
