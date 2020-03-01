@@ -4,9 +4,10 @@ use std::ops::{Index, Range};
 use Buffer::*;
 use IndexLocation::*;
 
-trait TextBuffer<T> {
-    fn insert_item_at(&mut self, item: T, index: usize);
-    fn insert_items_at(&mut self, items: Vec<T>, index: usize);
+trait TextBuffer {
+    fn insert_item_at(&mut self, item: char, index: usize);
+    fn insert_items_at(&mut self, items: Vec<char>, index: usize);
+    fn line_count(&self) -> usize;
     fn remove_item_at(&mut self, index: usize);
     fn remove_items(&mut self, range: Range<usize>);
 }
@@ -81,15 +82,12 @@ where
     }
 }
 
-impl<T> TextBuffer<T> for PieceTable<T>
-where
-    T: Copy,
-{
-    fn insert_item_at(&mut self, item: T, index: usize) {
+impl TextBuffer for PieceTable<char> {
+    fn insert_item_at(&mut self, item: char, index: usize) {
         self.insert_items_at(vec![item], index);
     }
 
-    fn insert_items_at(&mut self, items: Vec<T>, index: usize) {
+    fn insert_items_at(&mut self, items: Vec<char>, index: usize) {
         let location = self.index_location(index);
         let new_piece = Piece {
             buffer: Buffer::Added,
@@ -124,6 +122,19 @@ where
             EOF => self.pieces.push(new_piece),
         }
         self.added.extend(items);
+    }
+
+    // TODO: Support different line endings
+    fn line_count(&self) -> usize {
+        let mut count = 1;
+        for item in self.iter() {
+            match item {
+                '\n' => count += 1,
+                _ => {}
+            }
+        }
+
+        count
     }
 
     fn remove_item_at(&mut self, index: usize) {
@@ -290,39 +301,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn iter() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
-        pt.added = vec!['0', '1', '2', '3'];
-        pt.pieces = vec![
-            Piece {
-                buffer: Buffer::Original,
-                start: 0,
-                length: 2,
-            },
-            Piece {
-                buffer: Buffer::Added,
-                start: 0,
-                length: 3,
-            },
-            Piece {
-                buffer: Buffer::Original,
-                start: 2,
-                length: 2,
-            },
-            Piece {
-                buffer: Buffer::Added,
-                start: 3,
-                length: 1,
-            },
-        ];
-
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['a', 'b', '0', '1', '2', 'c', 'd', '3']
-        );
-    }
-
-    #[test]
     fn index() {
         let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
         pt.added = vec!['0', '1', '2', '3'];
@@ -410,6 +388,47 @@ mod tests {
             pt.iter().collect::<Vec<char>>(),
             vec!['a', 'b', 'c', 'd', '0', '1', '2', '3']
         );
+    }
+
+    #[test]
+    fn iter() {
+        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
+        pt.added = vec!['0', '1', '2', '3'];
+        pt.pieces = vec![
+            Piece {
+                buffer: Buffer::Original,
+                start: 0,
+                length: 2,
+            },
+            Piece {
+                buffer: Buffer::Added,
+                start: 0,
+                length: 3,
+            },
+            Piece {
+                buffer: Buffer::Original,
+                start: 2,
+                length: 2,
+            },
+            Piece {
+                buffer: Buffer::Added,
+                start: 3,
+                length: 1,
+            },
+        ];
+
+        assert_eq!(
+            pt.iter().collect::<Vec<char>>(),
+            vec!['a', 'b', '0', '1', '2', 'c', 'd', '3']
+        );
+    }
+
+    #[test]
+    fn line_count() {
+        let pt = &mut PieceTable::new(vec!['a', 'b', '\n', 'd']);
+        pt.insert_items_at(vec!['0', '\n', '2'], 4);
+
+        assert_eq!(3, pt.line_count());
     }
 
     #[test]
