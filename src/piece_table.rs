@@ -153,7 +153,8 @@ where
         };
 
         if start_piece_index < end_piece_index {
-            self.pieces.drain(start_piece_index + 1..end_piece_index);
+            let drained_length = self.pieces.drain(start_piece_index + 1..end_piece_index).len();
+            end_piece_index -= drained_length;
 
             match start_location {
                 PieceHead(_) => {
@@ -481,10 +482,10 @@ mod tests {
             vec!['a', 'b', '0', '2', 'c', 'd', '3']
         );
 
-        pt.remove_items(4..6);
+        pt.remove_items(1..6);
         assert_eq!(
             pt.iter().collect::<Vec<char>>(),
-            vec!['a', 'b', '0', '2', '3']
+            vec!['a', '3']
         );
     }
 }
