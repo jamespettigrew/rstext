@@ -19,6 +19,7 @@ where
     original: Vec<T>,
     added: Vec<T>,
     pieces: Vec<Piece>,
+    length: usize,
 }
 
 #[derive(Copy, Clone)]
@@ -47,6 +48,7 @@ where
 {
     fn new(content: Vec<T>) -> PieceTable<T> {
         PieceTable {
+            length: content.len(),
             pieces: vec![Piece {
                 buffer: Buffer::Original,
                 start: 0,
@@ -60,8 +62,37 @@ where
     fn iter<'a>(&'a self) -> PieceTableIter<'a, T> {
         PieceTableIter {
             inner: self,
-            piece_index: 0,
-            piece_buffer_index: 0,
+            current_piece_index: 0,
+            current_piece_offset: 0,
+            end_piece_index: self.pieces.len() - 1,
+            end_piece_offset: self.pieces.last().map_or_else(|| 0, |p| p.length - 1),
+        }
+    }
+
+    fn iter_range<'a>(&'a self, range: Range<usize>) -> PieceTableIter<'a, T> {
+        let start_location = self.index_location(range.start);
+        let end_location = self.index_location(range.end - 1);
+
+        let (start_piece_index, start_piece_offset) = match start_location {
+            PieceHead(piece_index) => (piece_index, 0),
+            PieceBody(piece_index, piece_offset) => (piece_index, piece_offset),
+            PieceTail(piece_index) => (piece_index, self.pieces[piece_index].length - 1),
+            EOF => panic!("Start index of range")
+        };
+
+        let (end_piece_index, end_piece_offset) = match end_location {
+            PieceHead(piece_index) => (piece_index, 0),
+            PieceBody(piece_index, piece_offset) => (piece_index, piece_offset),
+            PieceTail(piece_index) => (piece_index, self.pieces[piece_index].length - 1),
+            EOF => (self.pieces.len() - 1, self.pieces.last().map_or_else(|| 0, |p| p.length - 1))
+        };
+
+        PieceTableIter {
+            inner: self,
+            current_piece_index: start_piece_index,
+            current_piece_offset: start_piece_offset,
+            end_piece_index: end_piece_index,
+            end_piece_offset: end_piece_offset,
         }
     }
 
@@ -121,6 +152,7 @@ impl TextBuffer for PieceTable<char> {
             }
             EOF => self.pieces.push(new_piece),
         }
+        self.length += items.len();
         self.added.extend(items);
     }
 
@@ -164,7 +196,10 @@ impl TextBuffer for PieceTable<char> {
         };
 
         if start_piece_index < end_piece_index {
-            let drained_length = self.pieces.drain(start_piece_index + 1..end_piece_index).len();
+            let drained_length = self
+                .pieces
+                .drain(start_piece_index + 1..end_piece_index)
+                .len();
             end_piece_index -= drained_length;
 
             match start_location {
@@ -235,6 +270,7 @@ impl TextBuffer for PieceTable<char> {
                 _ => panic!(),
             }
         }
+        self.length -= (range.end - 1) - range.start;
     }
 }
 
@@ -243,8 +279,10 @@ where
     T: Copy,
 {
     inner: &'a PieceTable<T>,
-    piece_index: usize,
-    piece_buffer_index: usize,
+    current_piece_index: usize,
+    current_piece_offset: usize,
+    end_piece_index: usize,
+    end_piece_offset: usize,
 }
 
 impl<T> Index<usize> for PieceTable<T>
@@ -276,18 +314,24 @@ where
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(current_piece) = self.inner.pieces.get(self.piece_index) {
-            if self.piece_buffer_index >= current_piece.length {
-                self.piece_index += 1;
-                self.piece_buffer_index = 0;
+        if self.current_piece_index == self.end_piece_index
+            && self.current_piece_offset > self.end_piece_offset
+        {
+            return None;
+        }
+
+        if let Some(current_piece) = self.inner.pieces.get(self.current_piece_index) {
+            if self.current_piece_offset >= current_piece.length {
+                self.current_piece_index += 1;
+                self.current_piece_offset = 0;
                 return self.next();
             }
 
             let item = match current_piece.buffer {
-                Original => self.inner.original[current_piece.start + self.piece_buffer_index],
-                Added => self.inner.added[current_piece.start + self.piece_buffer_index],
+                Original => self.inner.original[current_piece.start + self.current_piece_offset],
+                Added => self.inner.added[current_piece.start + self.current_piece_offset],
             };
-            self.piece_buffer_index += 1;
+            self.current_piece_offset += 1;
 
             return Some(item);
         }
@@ -424,6 +468,48 @@ mod tests {
     }
 
     #[test]
+    fn iter_range() {
+        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
+        pt.added = vec!['0', '1', '2', '3'];
+        pt.pieces = vec![
+            Piece {
+                buffer: Buffer::Original,
+                start: 0,
+                length: 2,
+            },
+            Piece {
+                buffer: Buffer::Added,
+                start: 0,
+                length: 3,
+            },
+            Piece {
+                buffer: Buffer::Original,
+                start: 2,
+                length: 2,
+            },
+            Piece {
+                buffer: Buffer::Added,
+                start: 3,
+                length: 1,
+            },
+        ];
+
+        // vec!['a', 'b', '0', '1', '2', 'c', 'd', '3']
+        assert_eq!(
+            pt.iter_range(1..4).collect::<Vec<char>>(),
+            vec!['b', '0', '1']
+        );
+        assert_eq!(
+            pt.iter_range(0..5).collect::<Vec<char>>(),
+            vec!['a', 'b', '0', '1', '2']
+        );
+        assert_eq!(
+            pt.iter_range(4..23).collect::<Vec<char>>(),
+            vec!['2', 'c', 'd', '3']
+        );
+    }
+
+    #[test]
     fn line_count() {
         let pt = &mut PieceTable::new(vec!['a', 'b', '\n', 'd']);
         pt.insert_items_at(vec!['0', '\n', '2'], 4);
@@ -502,9 +588,6 @@ mod tests {
         );
 
         pt.remove_items(1..6);
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['a', '3']
-        );
+        assert_eq!(pt.iter().collect::<Vec<char>>(), vec!['a', '3']);
     }
 }
