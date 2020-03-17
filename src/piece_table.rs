@@ -86,13 +86,23 @@ impl PieceTable {
 
     fn iter_range<'a>(&'a self, range: Range<usize>) -> PieceTableIter<'a> {
         let start_location = self.index_location(range.start);
-        let end_location = self.index_location(range.end - 1);
+        let end_location = self.index_location(range.end.checked_sub(1).unwrap_or(0));
+
+        if self.length == 0 {
+            return PieceTableIter {
+                inner: self,
+                current_piece_index: 0,
+                current_piece_offset: 0,
+                end_piece_index: 0,
+                end_piece_offset: 0
+            };
+        }
 
         let (start_piece_index, start_piece_offset) = match start_location {
             PieceHead(piece_index) => (piece_index, 0),
             PieceBody(piece_index, piece_offset) => (piece_index, piece_offset),
             PieceTail(piece_index) => (piece_index, self.pieces[piece_index].length - 1),
-            EOF => panic!("Start index of range")
+            EOF => panic!("Start index out of range")
         };
 
         let (end_piece_index, end_piece_offset) = match end_location {
@@ -208,25 +218,27 @@ impl TextBuffer for PieceTable {
         let mut item_count = 0;
         let mut lines_remaining = line_index;
 
-        for piece in &self.pieces {
-            let lines_in_piece = piece.line_break_offsets.len();
+        if self.line_count() > 1 {
+            for piece in &self.pieces {
+                let lines_in_piece = piece.line_break_offsets.len();
 
-            if line_start_index.is_some() && lines_in_piece > 0 {
-                line_end_index = Some(item_count + piece.line_break_offsets[0]);
-                break;
-            } else if lines_remaining <= lines_in_piece {
-                // Row is in this piece
-                line_start_index = Some(item_count + piece.line_break_offsets[lines_remaining - 1] + 1);
-
-                if lines_remaining < lines_in_piece {
-                    // Start of next row is also in this piece
-                    let next_line_break_offset = piece.line_break_offsets[lines_remaining];
-                    line_end_index = Some(item_count + next_line_break_offset);
+                if line_start_index.is_some() && lines_in_piece > 0 {
+                    line_end_index = Some(item_count + piece.line_break_offsets[0]);
                     break;
+                } else if lines_remaining <= lines_in_piece {
+                    // Row is in this piece
+                    line_start_index = Some(item_count + piece.line_break_offsets[lines_remaining - 1] + 1);
+
+                    if lines_remaining < lines_in_piece {
+                        // Start of next row is also in this piece
+                        let next_line_break_offset = piece.line_break_offsets[lines_remaining];
+                        line_end_index = Some(item_count + next_line_break_offset);
+                        break;
+                    }
                 }
+                lines_remaining = lines_remaining.checked_sub(lines_in_piece).unwrap_or(0);
+                item_count += piece.length;
             }
-            lines_remaining = lines_remaining.checked_sub(lines_in_piece).unwrap_or(0);
-            item_count += piece.length;
         }
 
         let range_start = line_start_index.unwrap_or(0);
@@ -631,10 +643,9 @@ mod tests {
 
     #[test]
     fn line_at() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', '\n', 'd']);
-        pt.insert_items_at(vec!['0', '\n', '2', '3', '4', '5', '6', '7', '\n', '8', '9'], 4);
-
+        let pt = &mut PieceTable::new(vec!['a', 'b']);
         assert_eq!(vec!['a', 'b'], pt.line_at(0).content);
+        pt.insert_items_at(vec!['\n', 'd', '0', '\n', '2', '3', '4', '5', '6', '7', '\n', '8', '9'], 4);
         assert_eq!(vec!['d', '0'], pt.line_at(1).content);
         assert_eq!(vec!['2', '3', '4', '5', '6', '7'], pt.line_at(2).content);
         assert_eq!(vec!['8', '9'], pt.line_at(3).content);
