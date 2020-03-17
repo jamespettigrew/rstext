@@ -399,7 +399,7 @@ impl TextBuffer for PieceTable {
                 _ => panic!(),
             }
         }
-        self.length -= (range.end - 1) - range.start;
+        self.length = self.length.checked_sub(range.end - range.start).unwrap_or(0);
     }
 }
 
