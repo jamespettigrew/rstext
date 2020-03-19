@@ -139,14 +139,14 @@ impl PieceTable {
 
     fn line_breaks_in_buffer_range(&self, buffer: Buffer, range: Range<usize>) -> Vec<usize> {
         let mut offsets = Vec::new();
-        for index in range {
+        for (count, index) in range.enumerate() {
            let character = match buffer {
                Original => self.original[index],
                Added => self.added[index]
            };
 
            match character {
-               '\n' => offsets.push(index),
+               '\n' => offsets.push(count),
                _ => ()
            }
         }
