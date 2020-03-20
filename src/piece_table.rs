@@ -27,7 +27,7 @@ enum Buffer {
 }
 
 struct Line {
-    line_start_index: usize,
+    start_index: usize,
     content: Vec<char>
 }
 
@@ -213,40 +213,64 @@ impl TextBuffer for PieceTable {
 
     // TODO: Support different line endings
     fn line_at(&self, line_index: usize) -> Line {
-        let mut line_start_index: Option<usize> = if line_index == 0 { Some(0) } else { None };
-        let mut line_end_index: Option<usize> = None;
+        let mut line_start_index = 0;
+        let mut line_end_index = None;
         let mut item_count = 0;
-        let mut lines_remaining = line_index;
+        let mut line_start_piece_index = 0;
 
-        if self.line_count() > 1 {
-            for piece in &self.pieces {
-                let lines_in_piece = piece.line_break_offsets.len();
+        if line_index > 0 {
+            // Find start index
+            let mut line_breaks_remaining = line_index;
+            for (piece_index, piece) in self.pieces.iter().enumerate() {
+                if line_breaks_remaining <= piece.line_break_offsets.len() {
+                    // Line starts in this piece
+                    let line_break_offset = piece.line_break_offsets[line_breaks_remaining - 1];
+                    line_start_index = item_count + line_break_offset + 1;
+                    line_start_piece_index = piece_index;
 
-                if line_start_index.is_some() && lines_in_piece > 0 {
-                    line_end_index = Some(item_count + piece.line_break_offsets[0]);
-                    break;
-                } else if lines_remaining <= lines_in_piece {
-                    // Row is in this piece
-                    line_start_index = Some(item_count + piece.line_break_offsets[lines_remaining - 1] + 1);
-
-                    if lines_remaining < lines_in_piece {
-                        // Start of next row is also in this piece
-                        let next_line_break_offset = piece.line_break_offsets[lines_remaining];
+                    if line_breaks_remaining < piece.line_break_offsets.len() {
+                        // Start of next line is also in this piece
+                        let next_line_break_offset = piece.line_break_offsets[line_breaks_remaining];
                         line_end_index = Some(item_count + next_line_break_offset);
-                        break;
                     }
+                    item_count += piece.length;
+                    break;
                 }
-                lines_remaining = lines_remaining.checked_sub(lines_in_piece).unwrap_or(0);
+                line_breaks_remaining = line_breaks_remaining
+                    .checked_sub(piece.line_break_offsets.len())
+                    .unwrap_or(0);
                 item_count += piece.length;
             }
         }
 
-        let range_start = line_start_index.unwrap_or(0);
-        let range_end= line_end_index.unwrap_or(self.length);
+        // Find end index if we haven't already, will be index of first line break - 1
+        if line_end_index.is_none() {
+            if line_index == 0 {
+                // We didn't search for first line break and thus didn't count items
+                let (piece_index, count) = self.pieces
+                    .iter()
+                    .take_while(|p| p.line_break_offsets.len() == 0)
+                    .fold((0, 0), |(index, count), p| (index + 1, count + p.length));
+                line_start_piece_index = piece_index - 1;
+                item_count = count;
+            }
+
+            for piece in self.pieces.iter().skip(line_start_piece_index + 1) {
+                if !piece.line_break_offsets.is_empty() {
+                    line_end_index = Some(item_count + piece.line_break_offsets[0]);
+                    break;
+                }
+                item_count += piece.length;
+            }
+        }
+
+        let content = self
+            .iter_range(line_start_index..line_end_index.unwrap_or(self.length))
+            .collect::<Vec<char>>();
 
         Line {
-            line_start_index: range_start,
-            content: self.iter_range(range_start..range_end).collect::<Vec<char>>()
+            start_index: line_start_index,
+            content
         }
     }
 
@@ -649,6 +673,28 @@ mod tests {
         assert_eq!(vec!['d', '0'], pt.line_at(1).content);
         assert_eq!(vec!['2', '3', '4', '5', '6', '7'], pt.line_at(2).content);
         assert_eq!(vec!['8', '9'], pt.line_at(3).content);
+
+        pt.insert_item_at('\n', 14);
+        assert_eq!(vec!['8'], pt.line_at(3).content);
+
+        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
+        pt.insert_item_at('\n', 2);
+        assert_eq!(vec!['a', 'b'], pt.line_at(0).content);
+        assert_eq!(vec!['c', 'd'], pt.line_at(1).content);
+        pt.remove_item_at(2);
+        pt.insert_item_at('\n', 2);
+        assert_eq!(vec!['a', 'b'], pt.line_at(0).content);
+        assert_eq!(vec!['c', 'd'], pt.line_at(1).content);
+
+        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
+        pt.insert_item_at('\n', 2);
+        let a = pt.line_at(0);
+        pt.insert_item_at('c', 2);
+        let a = pt.line_at(0);
+        pt.insert_item_at('c', 3);
+        let a = pt.line_at(0);
+        assert_eq!(vec!['a', 'b', 'c', 'c'], pt.line_at(0).content);
+        assert_eq!(vec!['c', 'd'], pt.line_at(1).content);
     }
 
     #[test]
