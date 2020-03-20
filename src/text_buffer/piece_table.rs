@@ -1,24 +1,9 @@
+use crate::text_buffer::{ Line, TextBuffer };
 use std::iter::Iterator;
 use std::ops::{Index, Range};
 
 use Buffer::*;
 use IndexLocation::*;
-
-pub trait TextBuffer {
-    fn insert_item_at(&mut self, item: char, index: usize);
-    fn insert_items_at(&mut self, items: Vec<char>, index: usize);
-    fn line_at(&self, row: usize) -> Line;
-    fn line_count(&self) -> usize;
-    fn remove_item_at(&mut self, index: usize);
-    fn remove_items(&mut self, range: Range<usize>);
-}
-
-pub struct PieceTable {
-    original: Vec<char>,
-    added: Vec<char>,
-    pieces: Vec<Piece>,
-    length: usize,
-}
 
 #[derive(Copy, Clone)]
 enum Buffer {
@@ -26,9 +11,11 @@ enum Buffer {
     Added,
 }
 
-pub struct Line {
-    pub start_index: usize,
-    pub content: Vec<char>
+enum IndexLocation {
+    PieceHead(usize),
+    PieceBody(usize, usize),
+    PieceTail(usize),
+    EOF,
 }
 
 struct Piece {
@@ -36,13 +23,6 @@ struct Piece {
     start: usize,
     length: usize,
     line_break_offsets: Vec<usize>
-}
-
-enum IndexLocation {
-    PieceHead(usize),
-    PieceBody(usize, usize),
-    PieceTail(usize),
-    EOF,
 }
 
 impl Piece {
@@ -59,6 +39,13 @@ impl Piece {
 
         piece
     }
+}
+
+pub struct PieceTable {
+    original: Vec<char>,
+    added: Vec<char>,
+    pieces: Vec<Piece>,
+    length: usize,
 }
 
 impl PieceTable {
