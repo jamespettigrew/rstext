@@ -79,16 +79,13 @@ impl PieceTable {
             inner: self,
             current_piece_index: 0,
             current_piece_offset: 0,
-            end_piece_index: self.pieces.len() - 1,
-            end_piece_offset: self.pieces.last().map_or_else(|| 0, |p| p.length - 1),
+            end_piece_index: self.pieces.len(),
+            end_piece_offset: 0
         }
     }
 
     fn iter_range<'a>(&'a self, range: Range<usize>) -> PieceTableIter<'a> {
-        let start_location = self.index_location(range.start);
-        let end_location = self.index_location(range.end.checked_sub(1).unwrap_or(0));
-
-        if self.length == 0 {
+        if self.length == 0 || range.start >= range.end {
             return PieceTableIter {
                 inner: self,
                 current_piece_index: 0,
@@ -98,6 +95,9 @@ impl PieceTable {
             };
         }
 
+        let start_location = self.index_location(range.start);
+        let end_location = self.index_location(range.end.checked_sub(1).unwrap_or(0));
+
         let (start_piece_index, start_piece_offset) = match start_location {
             PieceHead(piece_index) => (piece_index, 0),
             PieceBody(piece_index, piece_offset) => (piece_index, piece_offset),
@@ -106,10 +106,10 @@ impl PieceTable {
         };
 
         let (end_piece_index, end_piece_offset) = match end_location {
-            PieceHead(piece_index) => (piece_index, 0),
-            PieceBody(piece_index, piece_offset) => (piece_index, piece_offset),
-            PieceTail(piece_index) => (piece_index, self.pieces[piece_index].length - 1),
-            EOF => (self.pieces.len() - 1, self.pieces.last().map_or_else(|| 0, |p| p.length - 1))
+            PieceHead(piece_index) => (piece_index, 1),
+            PieceBody(piece_index, piece_offset) => (piece_index, piece_offset + 1),
+            PieceTail(piece_index) => (piece_index + 1, 0),
+            EOF => (self.pieces.len(), 0)
         };
 
         PieceTableIter {
@@ -435,7 +435,7 @@ impl<'a> Iterator for PieceTableIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_piece_index == self.end_piece_index
-            && self.current_piece_offset > self.end_piece_offset
+            && self.current_piece_offset >= self.end_piece_offset
         {
             return None;
         }
