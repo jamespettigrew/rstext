@@ -420,6 +420,14 @@ impl TextBuffer for PieceTable {
                         self
                     );
                 }
+                (PieceTail(_), PieceTail(_)) => {
+                    let piece = &mut self.pieces[start_piece_index];
+                    if piece.length.checked_sub(1).is_some() {
+                        piece.length -= 1;
+                    } else {
+                        &self.pieces.remove(start_piece_index);
+                    }
+                }
                 _ => panic!(),
             }
         }
@@ -785,5 +793,43 @@ mod tests {
 
         pt.remove_items(1..6);
         assert_eq!(pt.iter().collect::<Vec<char>>(), vec!['a', '3']);
+    }
+
+    #[test]
+    fn remove_tail() {
+        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
+        pt.added = vec!['0', '1', '2', '3'];
+        pt.pieces = vec![
+            Piece {
+                buffer: Buffer::Original,
+                start: 0,
+                length: 2,
+                line_break_offsets: Vec::new(),
+            },
+            Piece {
+                buffer: Buffer::Added,
+                start: 0,
+                length: 3,
+                line_break_offsets: Vec::new(),
+            },
+            Piece {
+                buffer: Buffer::Original,
+                start: 2,
+                length: 2,
+                line_break_offsets: Vec::new(),
+            },
+            Piece {
+                buffer: Buffer::Added,
+                start: 3,
+                length: 1,
+                line_break_offsets: Vec::new(),
+            },
+        ];
+
+        pt.remove_item_at(1);
+        assert_eq!(
+            pt.iter().collect::<Vec<char>>(),
+            vec!['a', '0', '1', '2', 'c', 'd', '3']
+        );
     }
 }
