@@ -4,7 +4,7 @@ use crate:: text_buffer;
 use crossterm::{
     cursor::MoveTo,
     queue, style,
-    style::Color,
+    style::{ Color, style },
     terminal,
     terminal::{Clear, ClearType}
 };
@@ -84,28 +84,39 @@ pub fn render(screen: &mut impl Write, text_buffer: &impl TextBuffer, cursor: &C
     
     let mut row_count = 0;
     for (row_index, line) in line_iter {
-        queue!(
-            screen,
-            MoveTo(0, row_count as u16),
-            style::SetForegroundColor(Color::Blue),
-            style::Print(format!(
+        let mut background_color = Color::Reset;
+
+        if row_index == cursor.row {
+            background_color = Color::Rgb { r: 59, g: 66, b: 82 };
+            let characters = (0..terminal_width).map(|_| ' ').collect::<String>();
+            let styled_characters = style(characters)
+                .on(background_color);
+            queue!(screen, MoveTo(0, row_count as u16), style::PrintStyledContent(styled_characters));
+        }
+
+        let characters = format!(
                 "{:>min_width$}",
                 row_index + 1,
                 min_width = min_line_number_columns
-            )),
-            style::ResetColor,
+            );
+        let styled_characters = style(characters).with(Color::Blue).on(background_color);
+        queue!(
+            screen,
+            MoveTo(0, row_count as u16),
+            style::PrintStyledContent(styled_characters),
             MoveTo(line_number_columns, row_count as u16)
         );
 
-        let character_iter = line
+        let characters = line
             .content
             .iter()
             .skip(window.horizontal_offset)
-            .take(window.width as usize);
-        for character in character_iter {
-            queue!(screen, style::Print(character));
-        }
-
+            .take(window.width as usize)
+            .collect::<String>();
+        let styled_characters = style(characters)
+            .with(Color::Yellow)
+            .on(background_color);
+        queue!(screen, style::PrintStyledContent(styled_characters));
         row_count += 1;
     }
 
