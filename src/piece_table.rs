@@ -4,7 +4,7 @@ use std::ops::{Index, Range};
 use Buffer::*;
 use IndexLocation::*;
 
-trait TextBuffer {
+pub trait TextBuffer {
     fn insert_item_at(&mut self, item: char, index: usize);
     fn insert_items_at(&mut self, items: Vec<char>, index: usize);
     fn line_at(&self, row: usize) -> Line;
@@ -13,7 +13,7 @@ trait TextBuffer {
     fn remove_items(&mut self, range: Range<usize>);
 }
 
-struct PieceTable {
+pub struct PieceTable {
     original: Vec<char>,
     added: Vec<char>,
     pieces: Vec<Piece>,
@@ -26,9 +26,9 @@ enum Buffer {
     Added,
 }
 
-struct Line {
-    start_index: usize,
-    content: Vec<char>
+pub struct Line {
+    pub start_index: usize,
+    pub content: Vec<char>
 }
 
 struct Piece {
@@ -62,7 +62,7 @@ impl Piece {
 }
 
 impl PieceTable {
-    fn new(content: Vec<char>) -> PieceTable {
+    pub fn new(content: Vec<char>) -> PieceTable {
         let mut piece_table = PieceTable {
             length: content.len(),
             pieces: Vec::new(),
