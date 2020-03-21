@@ -205,7 +205,17 @@ impl TextBuffer for PieceTable {
         let mut item_count = 0;
         let mut line_start_piece_index = 0;
 
-        if line_index > 0 {
+        if line_index == 0 {
+            // Line starts at index 0, ends at first line break found
+            for piece in self.pieces.iter() {
+                if !piece.line_break_offsets.is_empty() {
+                    line_end_index = Some(item_count + piece.line_break_offsets[0]);
+                    break;
+                }
+                item_count += piece.length;
+            }
+        }
+        else {
             // Find start index
             let mut line_breaks_remaining = line_index;
             for (piece_index, piece) in self.pieces.iter().enumerate() {
@@ -228,20 +238,8 @@ impl TextBuffer for PieceTable {
                     .unwrap_or(0);
                 item_count += piece.length;
             }
-        }
 
-        // Find end index if we haven't already, will be index of first line break - 1
-        if line_end_index.is_none() {
-            if line_index == 0 {
-                // We didn't search for first line break and thus didn't count items
-                let (piece_index, count) = self.pieces
-                    .iter()
-                    .take_while(|p| p.line_break_offsets.len() == 0)
-                    .fold((0, 0), |(index, count), p| (index + 1, count + p.length));
-                line_start_piece_index = piece_index - 1;
-                item_count = count;
-            }
-
+            // Find end index by searching for first line break from line_start_index onwards
             for piece in self.pieces.iter().skip(line_start_piece_index + 1) {
                 if !piece.line_break_offsets.is_empty() {
                     line_end_index = Some(item_count + piece.line_break_offsets[0]);
@@ -683,13 +681,14 @@ mod tests {
 
         let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
         pt.insert_item_at('\n', 2);
-        let a = pt.line_at(0);
         pt.insert_item_at('c', 2);
-        let a = pt.line_at(0);
         pt.insert_item_at('c', 3);
-        let a = pt.line_at(0);
         assert_eq!(vec!['a', 'b', 'c', 'c'], pt.line_at(0).content);
         assert_eq!(vec!['c', 'd'], pt.line_at(1).content);
+
+        // Single piece with lines
+        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd', '\n', 'e', 'f']);
+        assert_eq!(vec!['a', 'b', 'c', 'd'], pt.line_at(0).content);
     }
 
     #[test]
