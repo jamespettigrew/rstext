@@ -45,7 +45,7 @@ pub struct PieceTable {
     original: Vec<char>,
     added: Vec<char>,
     pieces: Vec<Piece>,
-    length: usize,
+    pub length: usize,
 }
 
 impl PieceTable {
@@ -253,10 +253,7 @@ impl TextBuffer for PieceTable {
             .iter_range(line_start_index..line_end_index.unwrap_or(self.length))
             .collect::<Vec<char>>();
 
-        Line {
-            start_index: line_start_index,
-            content
-        }
+        Line::new(line_start_index, content)
     }
 
     // TODO: Support different line endings
@@ -661,34 +658,34 @@ mod tests {
     #[test]
     fn line_at() {
         let pt = &mut PieceTable::new(vec!['a', 'b']);
-        assert_eq!(vec!['a', 'b'], pt.line_at(0).content);
+        assert_eq!(vec!['a', 'b'], pt.line_at(0).characters);
         pt.insert_items_at(vec!['\n', 'd', '0', '\n', '2', '3', '4', '5', '6', '7', '\n', '8', '9'], 4);
-        assert_eq!(vec!['d', '0'], pt.line_at(1).content);
-        assert_eq!(vec!['2', '3', '4', '5', '6', '7'], pt.line_at(2).content);
-        assert_eq!(vec!['8', '9'], pt.line_at(3).content);
+        assert_eq!(vec!['d', '0'], pt.line_at(1).characters);
+        assert_eq!(vec!['2', '3', '4', '5', '6', '7'], pt.line_at(2).characters);
+        assert_eq!(vec!['8', '9'], pt.line_at(3).characters);
 
         pt.insert_item_at('\n', 14);
-        assert_eq!(vec!['8'], pt.line_at(3).content);
+        assert_eq!(vec!['8'], pt.line_at(3).characters);
 
         let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
         pt.insert_item_at('\n', 2);
-        assert_eq!(vec!['a', 'b'], pt.line_at(0).content);
-        assert_eq!(vec!['c', 'd'], pt.line_at(1).content);
+        assert_eq!(vec!['a', 'b'], pt.line_at(0).characters);
+        assert_eq!(vec!['c', 'd'], pt.line_at(1).characters);
         pt.remove_item_at(2);
         pt.insert_item_at('\n', 2);
-        assert_eq!(vec!['a', 'b'], pt.line_at(0).content);
-        assert_eq!(vec!['c', 'd'], pt.line_at(1).content);
+        assert_eq!(vec!['a', 'b'], pt.line_at(0).characters);
+        assert_eq!(vec!['c', 'd'], pt.line_at(1).characters);
 
         let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
         pt.insert_item_at('\n', 2);
         pt.insert_item_at('c', 2);
         pt.insert_item_at('c', 3);
-        assert_eq!(vec!['a', 'b', 'c', 'c'], pt.line_at(0).content);
-        assert_eq!(vec!['c', 'd'], pt.line_at(1).content);
+        assert_eq!(vec!['a', 'b', 'c', 'c'], pt.line_at(0).characters);
+        assert_eq!(vec!['c', 'd'], pt.line_at(1).characters);
 
         // Single piece with lines
         let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd', '\n', 'e', 'f']);
-        assert_eq!(vec!['a', 'b', 'c', 'd'], pt.line_at(0).content);
+        assert_eq!(vec!['a', 'b', 'c', 'd'], pt.line_at(0).characters);
     }
 
     #[test]

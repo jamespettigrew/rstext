@@ -1,12 +1,14 @@
 mod cursor;
-mod text_buffer;
+mod grapheme;
 mod renderer;
+mod text_buffer;
+mod window;
 
 use cursor::{ Cursor, CursorMove, HorizontalMove, VerticalMove };
-use renderer::Window;
 use std::io::{stdout, Write};
 use text_buffer::TextBuffer;
 use text_buffer::piece_table::PieceTable;
+use window::Window;
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -38,34 +40,34 @@ fn main() -> Result<()> {
                     code: KeyCode::Backspace,
                     modifiers: _,
                 } => {
-                    if cursor.column == 0 && cursor.row > 0 {
-                        let line_above = text_buffer.line_at(cursor.row - 1);
-                        let new_cursor_column = line_above.content.len();
-                        text_buffer.remove_item_at(line_above.start_index + line_above.content.len());
+                    if cursor.character == 0 && cursor.line > 0 {
+                        let line_above = text_buffer.line_at(cursor.line - 1);
+                        let new_cursor_column = line_above.characters.len();
+                        text_buffer.remove_item_at(line_above.start_index + new_cursor_column);
 
-                        let column_delta = (new_cursor_column as isize) - (cursor.column as isize);
+                        let column_delta = (new_cursor_column as isize) - (cursor.character as isize);
                         let cursor_move = CursorMove {
                             vertical: Some(VerticalMove::Up(1)),
                             horizontal: HorizontalMove::from_delta(column_delta),
                         };
                         cursor.moved(cursor_move);
-                    } else if cursor.column > 0 {
-                        let current_line = text_buffer.line_at(cursor.row);
+                    } else if cursor.character > 0 {
+                        let current_line = text_buffer.line_at(cursor.line);
                         cursor.moved(CursorMove {
                             vertical: None,
                             horizontal: Some(HorizontalMove::Left(1)),
                         });
-                        text_buffer.remove_item_at(current_line.start_index + cursor.column);
+                        text_buffer.remove_item_at(current_line.start_index + cursor.character);
                     }
                 }
                 KeyEvent {
                     code: KeyCode::Enter,
                     modifiers: _,
                 } => {
-                    let current_line = text_buffer.line_at(cursor.row);
-                    text_buffer.insert_item_at('\n', current_line.start_index + cursor.column);
+                    let current_line = text_buffer.line_at(cursor.line);
+                    text_buffer.insert_item_at('\n', current_line.start_index + cursor.character);
 
-                    let column_delta = 0 - (cursor.column as isize);
+                    let column_delta = 0 - (cursor.character as isize);
                     let cursor_move = CursorMove {
                         vertical: Some(VerticalMove::Down(1)),
                         horizontal: HorizontalMove::from_delta(column_delta),
@@ -76,11 +78,11 @@ fn main() -> Result<()> {
                     code: KeyCode::Char(c),
                     modifiers: _,
                 } => {
-                    let current_line = text_buffer.line_at(cursor.row);
-                    text_buffer.insert_item_at(c, current_line.start_index + cursor.column);
+                    let current_line = text_buffer.line_at(cursor.line);
+                    text_buffer.insert_item_at(c, current_line.start_index + cursor.character);
                     let cursor_move = CursorMove {
                         vertical: None,
-                        horizontal: Some(HorizontalMove::Right(1)),
+                        horizontal: Some(HorizontalMove::Right(1))
                     };
                     cursor.moved(cursor_move);
                 }
@@ -88,14 +90,14 @@ fn main() -> Result<()> {
                     code: KeyCode::Up,
                     modifiers: _,
                 } => {
-                    if cursor.row > 0 {
-                        let line_above = text_buffer.line_at(cursor.row - 1);
+                    if cursor.line > 0 {
+                        let line_above = text_buffer.line_at(cursor.line - 1);
                         let mut column_delta = 0;
-                        if line_above.content.len() == 0
-                            || (line_above.content.len() - 1) < cursor.column
+                        if line_above.characters.len() == 0
+                            || (line_above.characters.len() - 1) < cursor.character
                         {
-                            column_delta = (line_above.content.len() as isize)
-                                - (cursor.column as isize)
+                            column_delta = (line_above.characters.len() as isize)
+                                - (cursor.character as isize)
                         }
 
                         let cursor_move = CursorMove {
@@ -109,14 +111,14 @@ fn main() -> Result<()> {
                     code: KeyCode::Down,
                     modifiers: _,
                 } => {
-                    if cursor.row < text_buffer.line_count() - 1 {
-                        let line_below = text_buffer.line_at(cursor.row + 1);
+                    if cursor.line < text_buffer.line_count() - 1 {
+                        let line_below = text_buffer.line_at(cursor.line + 1);
                         let mut column_delta = 0;
-                        if line_below.content.len() == 0
-                            || (line_below.content.len() - 1) < cursor.column
+                        if line_below.characters.len() == 0
+                            || (line_below.characters.len() - 1) < cursor.character
                         {
-                            column_delta = (line_below.content.len() as isize)
-                                - (cursor.column as isize)
+                            column_delta = (line_below.characters.len() as isize)
+                                - (cursor.character as isize)
                         }
 
                         let cursor_move = CursorMove {
@@ -130,15 +132,15 @@ fn main() -> Result<()> {
                     code: KeyCode::Left,
                     modifiers: _,
                 } => {
-                    if cursor.column > 0 {
+                    if cursor.character > 0 {
                         cursor.moved(CursorMove {
                             vertical: None,
                             horizontal: Some(HorizontalMove::Left(1)),
                         });
-                    } else if cursor.row > 0 {
-                        let line_above = text_buffer.line_at(cursor.row - 1);
+                    } else if cursor.line > 0 {
+                        let line_above = text_buffer.line_at(cursor.line - 1);
                         let column_delta =
-                            (line_above.content.len() as isize) - (cursor.column as isize);
+                            (line_above.characters.len() as isize) - (cursor.character as isize);
                         let cursor_move = CursorMove {
                             vertical: Some(VerticalMove::Up(1)),
                             horizontal: HorizontalMove::from_delta(column_delta),
@@ -150,14 +152,14 @@ fn main() -> Result<()> {
                     code: KeyCode::Right,
                     modifiers: _,
                 } => {
-                    let current_line = text_buffer.line_at(cursor.row);
-                    if cursor.column < current_line.content.len() {
+                    let current_line = text_buffer.line_at(cursor.line);
+                    if cursor.character < current_line.characters.len() {
                         cursor.moved(CursorMove {
                             vertical: None,
                             horizontal: Some(HorizontalMove::Right(1)),
                         });
-                    } else if cursor.row < text_buffer.line_count() - 1 {
-                        let column_delta = 0 - (cursor.column as isize);
+                    } else if cursor.line < text_buffer.line_count() - 1 {
+                        let column_delta = 0 - (cursor.character as isize);
                         let cursor_move = CursorMove {
                             vertical: Some(VerticalMove::Down(1)),
                             horizontal: HorizontalMove::from_delta(column_delta),
