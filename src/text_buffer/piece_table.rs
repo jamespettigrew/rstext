@@ -239,13 +239,15 @@ impl TextBuffer for PieceTable {
                 item_count += piece.length;
             }
 
-            // Find end index by searching for first line break from line_start_index onwards
-            for piece in self.pieces.iter().skip(line_start_piece_index + 1) {
-                if !piece.line_break_offsets.is_empty() {
-                    line_end_index = Some(item_count + piece.line_break_offsets[0]);
-                    break;
+            if line_end_index.is_none() {
+                // Find end index by searching for first line break from line_start_index onwards
+                for piece in self.pieces.iter().skip(line_start_piece_index + 1) {
+                    if !piece.line_break_offsets.is_empty() {
+                        line_end_index = Some(item_count + piece.line_break_offsets[0]);
+                        break;
+                    }
+                    item_count += piece.length;
                 }
-                item_count += piece.length;
             }
         }
 
@@ -690,6 +692,11 @@ mod tests {
         // Single piece with lines
         let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd', '\n', 'e', 'f']);
         assert_eq!(vec!['a', 'b', 'c', 'd'], pt.line_at(0).characters);
+
+        // Line not at index 0 where multiple pieces and start of next line in same piece
+        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd', '\n', 'e', 'f', '\n', 'h', 'i']);
+        pt.insert_items_at(vec!['\n', 'j', 'k'], 20);
+        assert_eq!(vec!['e', 'f'], pt.line_at(1).characters);
     }
 
     #[test]
