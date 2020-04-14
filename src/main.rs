@@ -1,10 +1,12 @@
 mod cursor;
 mod grapheme;
+mod file;
 mod renderer;
 mod text_buffer;
 mod window;
 
 use cursor::{ Cursor, CursorMove, HorizontalMove, VerticalMove };
+use std::env;
 use std::io::{stdout, Write};
 use text_buffer::TextBuffer;
 use text_buffer::piece_table::PieceTable;
@@ -22,7 +24,18 @@ fn main() -> Result<()> {
     execute!(stdout(), EnterAlternateScreen)?;
     terminal::enable_raw_mode()?;
 
-    let text_buffer= &mut PieceTable::new(vec![]);
+    let args: Vec<String> = env::args().collect();
+    let file_path = match &args[..] {
+        [_, path] => Some(path),
+        _ => None
+    };
+
+    let file_contents = match file_path {
+        Some(path) => file::load(path)?,
+        _ => Vec::new()
+    };
+
+    let text_buffer= &mut PieceTable::new(file_contents);
     let cursor = &mut Cursor::new();
     let window = &mut Window::new(0, 0, 0, 0);
     let screen = &mut stdout();
@@ -36,6 +49,14 @@ fn main() -> Result<()> {
                     code: KeyCode::Char('q'),
                     modifiers: KeyModifiers::CONTROL,
                 } => break,
+                KeyEvent {
+                    code: KeyCode::Char('s'),
+                    modifiers: KeyModifiers::CONTROL,
+                } => {
+                    if let Some(path) = file_path {
+                        file::save(path, text_buffer.all_content())?;
+                    }
+                }
                 KeyEvent {
                     code: KeyCode::Backspace,
                     modifiers: _,

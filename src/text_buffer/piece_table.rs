@@ -198,6 +198,10 @@ impl TextBuffer for PieceTable {
         }
     }
 
+    fn all_content(&self) -> Vec<char> {
+        self.iter().collect()
+    }
+
     // TODO: Support different line endings
     fn line_at(&self, line_index: usize) -> Line {
         let mut line_start_index = 0;
