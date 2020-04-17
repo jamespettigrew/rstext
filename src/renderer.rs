@@ -15,6 +15,8 @@ use grapheme::{Grapheme};
 use std::io::Write;
 use text_buffer::{ line::Line, TextBuffer };
 
+const MIN_WIDTH_LINE_NUMBER: u16 = 3;
+
 struct TerminalCursorPosition {
     row: usize,
     column: usize,
@@ -32,16 +34,31 @@ fn calc_absolute_cursor_position(
     }
 }
 
-fn line_number_width(min_width: usize,  line_count: usize) -> u16 {
+fn line_number_width(line_count: usize) -> u16 {
     // Number of columns the display of line numbers will require: max(3, num_digits) + 1 space
     let line_number_digits = line_count.to_string().len();
-    (std::cmp::max(min_width, line_number_digits) + 1) as u16
+    (std::cmp::max(3, line_number_digits) + 1) as u16
 }
 
 fn renderable_lines(text_buffer: &impl TextBuffer, window: &Window) -> Vec<(usize, Line)> {
     let last_line = std::cmp::min(window.bottom(), text_buffer.line_count());
     let line_range = window.vertical_offset..last_line;
     line_range.map(|x| (x, text_buffer.line_at(x))).collect()
+}
+
+fn get_cursor_position_info(cursor: &Cursor, absolute_cursor_position: &TerminalCursorPosition) -> String {
+    if cursor.character == absolute_cursor_position.column {
+        format!("Ln {}, Col {}",
+            cursor.line + 1,
+            cursor.character + 1
+        )
+    } else {
+        format!("Ln {}, Col {}-{}",
+            cursor.line + 1,
+            cursor.character + 1,
+            absolute_cursor_position.column + 1
+        )
+    }
 }
 
 pub fn render(
@@ -53,9 +70,8 @@ pub fn render(
 
     let (terminal_width, terminal_height) =
         terminal::size().expect("Failed to get terminal size.");
-    let min_width_line_number = 3usize;
-    let line_number_columns = line_number_width(min_width_line_number, text_buffer.line_count());
-    window.resize(terminal_height, terminal_width - line_number_columns);
+    let line_number_columns = line_number_width(text_buffer.line_count());
+    window.resize(terminal_height - 1, terminal_width - line_number_columns);
 
     let current_line = text_buffer.line_at(cursor.line);
     let graphemes = &Grapheme::from_line(&current_line);
@@ -77,7 +93,7 @@ pub fn render(
         let characters = format!(
                 "{:>min_width$}",
                 line_index + 1,
-                min_width = min_width_line_number
+                min_width = MIN_WIDTH_LINE_NUMBER as usize
             );
         let styled_characters = style(characters).with(Color::Blue).on(background_color);
         queue!(
@@ -106,6 +122,15 @@ pub fn render(
     let relative_cursor_row = absolute_cursor_position.row - window.vertical_offset;
     let relative_cursor_column =
         line_number_columns + ((absolute_cursor_position.column - window.horizontal_offset) as u16);
+    
+    let cursor_position_info = get_cursor_position_info(cursor, absolute_cursor_position);
+    let print_column_start = match terminal_width.checked_sub(cursor_position_info.chars().count() as u16) {
+        Some(x) => x,
+        None => 0
+    };
+
+    queue!(screen, MoveTo(print_column_start, terminal_height - 1), style::Print(cursor_position_info));
+
     queue!(screen, MoveTo(relative_cursor_column, relative_cursor_row as u16), Show);
     screen.flush().unwrap();
 }
