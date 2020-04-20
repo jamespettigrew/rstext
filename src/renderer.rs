@@ -2,7 +2,6 @@ use crate::cursor::Cursor;
 use crate::grapheme;
 use crate::text_buffer;
 use crate::window::Window;
-use std::cmp::{Eq, PartialEq};
 
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
@@ -11,7 +10,7 @@ use crossterm::{
     terminal,
     terminal::{Clear, ClearType}
 };
-use grapheme::{Grapheme};
+use grapheme::Grapheme;
 use std::io::Write;
 use text_buffer::{ line::Line, TextBuffer };
 
@@ -40,7 +39,7 @@ fn line_number_width(line_count: usize) -> u16 {
     (std::cmp::max(3, line_number_digits) + 1) as u16
 }
 
-fn renderable_lines(text_buffer: &impl TextBuffer, window: &Window) -> Vec<(usize, Line)> {
+fn renderable_lines(text_buffer: &dyn TextBuffer, window: &Window) -> Vec<(usize, Line)> {
     let last_line = std::cmp::min(window.bottom(), text_buffer.line_count());
     let line_range = window.vertical_offset..last_line;
     line_range.map(|x| (x, text_buffer.line_at(x))).collect()
@@ -63,7 +62,7 @@ fn get_cursor_position_info(cursor: &Cursor, absolute_cursor_position: &Terminal
 
 pub fn render(
     screen: &mut impl Write,
-    text_buffer: &impl TextBuffer,
+    text_buffer: &dyn TextBuffer,
     cursor: &Cursor,
     window: &mut Window) {
     queue!(screen, Clear(ClearType::All), Hide);
@@ -128,7 +127,6 @@ pub fn render(
         Some(x) => x,
         None => 0
     };
-
     queue!(screen, MoveTo(print_column_start, terminal_height - 1), style::Print(cursor_position_info));
 
     queue!(screen, MoveTo(relative_cursor_column, relative_cursor_row as u16), Show);
