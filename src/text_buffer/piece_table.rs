@@ -1,4 +1,4 @@
-use crate::text_buffer::{ Line, TextBuffer };
+use crate::text_buffer::{Line, TextBuffer};
 use std::iter::Iterator;
 use std::ops::{Index, Range};
 
@@ -22,19 +22,18 @@ struct Piece {
     buffer: Buffer,
     start: usize,
     length: usize,
-    line_break_offsets: Vec<usize>
+    line_break_offsets: Vec<usize>,
 }
 
 impl Piece {
     fn new(buffer: Buffer, start: usize, length: usize, piece_table: &PieceTable) -> Piece {
-        let line_break_offsets = piece_table.line_breaks_in_buffer_range(
-            buffer,
-            start..start + length);
+        let line_break_offsets =
+            piece_table.line_breaks_in_buffer_range(buffer, start..start + length);
         let mut piece = Piece {
             buffer,
             start,
             length,
-            line_break_offsets
+            line_break_offsets,
         };
 
         piece
@@ -67,7 +66,7 @@ impl PieceTable {
             current_piece_index: 0,
             current_piece_offset: 0,
             end_piece_index: self.pieces.len(),
-            end_piece_offset: 0
+            end_piece_offset: 0,
         }
     }
 
@@ -78,7 +77,7 @@ impl PieceTable {
                 current_piece_index: 0,
                 current_piece_offset: 0,
                 end_piece_index: 0,
-                end_piece_offset: 0
+                end_piece_offset: 0,
             };
         }
 
@@ -89,14 +88,14 @@ impl PieceTable {
             PieceHead(piece_index) => (piece_index, 0),
             PieceBody(piece_index, piece_offset) => (piece_index, piece_offset),
             PieceTail(piece_index) => (piece_index, self.pieces[piece_index].length - 1),
-            EOF => panic!("Start index out of range")
+            EOF => panic!("Start index out of range"),
         };
 
         let (end_piece_index, end_piece_offset) = match end_location {
             PieceHead(piece_index) => (piece_index, 1),
             PieceBody(piece_index, piece_offset) => (piece_index, piece_offset + 1),
             PieceTail(piece_index) => (piece_index + 1, 0),
-            EOF => (self.pieces.len(), 0)
+            EOF => (self.pieces.len(), 0),
         };
 
         PieceTableIter {
@@ -127,15 +126,15 @@ impl PieceTable {
     fn line_breaks_in_buffer_range(&self, buffer: Buffer, range: Range<usize>) -> Vec<usize> {
         let mut offsets = Vec::new();
         for (count, index) in range.enumerate() {
-           let character = match buffer {
-               Original => self.original[index],
-               Added => self.added[index]
-           };
+            let character = match buffer {
+                Original => self.original[index],
+                Added => self.added[index],
+            };
 
-           match character {
-               '\n' => offsets.push(count),
-               _ => ()
-           }
+            match character {
+                '\n' => offsets.push(count),
+                _ => (),
+            }
         }
 
         offsets
@@ -154,7 +153,7 @@ impl TextBuffer for PieceTable {
             Buffer::Added,
             self.added.len() - items.len(),
             items.len(),
-            self
+            self,
         );
         self.length += items.len();
 
@@ -166,14 +165,10 @@ impl TextBuffer for PieceTable {
                     original_piece.buffer,
                     original_piece.start + offset,
                     original_piece.length - offset,
-                    self
+                    self,
                 );
-                self.pieces[piece_index] = Piece::new(
-                    original_piece.buffer,
-                    original_piece.start,
-                    offset,
-                    self
-                );
+                self.pieces[piece_index] =
+                    Piece::new(original_piece.buffer, original_piece.start, offset, self);
                 self.pieces.insert(piece_index + 1, new_piece);
                 self.pieces.insert(piece_index + 2, offcut_piece);
             }
@@ -183,13 +178,13 @@ impl TextBuffer for PieceTable {
                     original_piece.buffer,
                     original_piece.start + original_piece.length - 1,
                     1,
-                    self
+                    self,
                 );
                 self.pieces[piece_index] = Piece::new(
                     original_piece.buffer,
                     original_piece.start,
                     original_piece.length - 1,
-                    self
+                    self,
                 );
                 self.pieces.insert(piece_index + 1, new_piece);
                 self.pieces.insert(piece_index + 2, offcut_piece);
@@ -218,8 +213,7 @@ impl TextBuffer for PieceTable {
                 }
                 item_count += piece.length;
             }
-        }
-        else {
+        } else {
             // Find start index
             let mut line_breaks_remaining = line_index;
             for (piece_index, piece) in self.pieces.iter().enumerate() {
@@ -231,7 +225,8 @@ impl TextBuffer for PieceTable {
 
                     if line_breaks_remaining < piece.line_break_offsets.len() {
                         // Start of next line is also in this piece
-                        let next_line_break_offset = piece.line_break_offsets[line_breaks_remaining];
+                        let next_line_break_offset =
+                            piece.line_break_offsets[line_breaks_remaining];
                         line_end_index = Some(item_count + next_line_break_offset);
                     }
                     item_count += piece.length;
@@ -264,7 +259,9 @@ impl TextBuffer for PieceTable {
 
     // TODO: Support different line endings
     fn line_count(&self) -> usize {
-        self.pieces.iter().fold(1, |count, piece| piece.line_break_offsets.len() + count)
+        self.pieces
+            .iter()
+            .fold(1, |count, piece| piece.line_break_offsets.len() + count)
     }
 
     fn remove_item_at(&mut self, index: usize) {
@@ -311,7 +308,7 @@ impl TextBuffer for PieceTable {
                         original_piece.buffer,
                         original_piece.start,
                         piece_offset,
-                        self
+                        self,
                     );
                 }
                 PieceTail(_) => {
@@ -320,7 +317,7 @@ impl TextBuffer for PieceTable {
                         original_piece.buffer,
                         original_piece.start,
                         original_piece.length - 1,
-                        self
+                        self,
                     );
                 }
                 EOF => {}
@@ -333,12 +330,16 @@ impl TextBuffer for PieceTable {
                         original_piece.buffer,
                         original_piece.start + 1,
                         original_piece.length - 1,
-                        self
+                        self,
                     );
 
                     match new_piece.length {
-                        x if x >= 1 => { self.pieces[end_piece_index] = new_piece; },
-                        _ => { self.pieces.remove(end_piece_index); },
+                        x if x >= 1 => {
+                            self.pieces[end_piece_index] = new_piece;
+                        }
+                        _ => {
+                            self.pieces.remove(end_piece_index);
+                        }
                     }
                 }
                 PieceBody(_, piece_offset) => {
@@ -347,7 +348,7 @@ impl TextBuffer for PieceTable {
                         original_piece.buffer,
                         original_piece.start + piece_offset + 1,
                         original_piece.length - piece_offset - 1,
-                        self
+                        self,
                     );
                 }
                 PieceTail(_) => {
@@ -363,12 +364,16 @@ impl TextBuffer for PieceTable {
                         original_piece.buffer,
                         original_piece.start + 1,
                         original_piece.length - 1,
-                        self
+                        self,
                     );
 
                     match new_piece.length {
-                        x if x >= 1 => { self.pieces[end_piece_index] = new_piece; },
-                        _ => { self.pieces.remove(end_piece_index); },
+                        x if x >= 1 => {
+                            self.pieces[end_piece_index] = new_piece;
+                        }
+                        _ => {
+                            self.pieces.remove(end_piece_index);
+                        }
                     }
                 }
                 (PieceHead(_), PieceBody(_, piece_offset)) => {
@@ -377,7 +382,7 @@ impl TextBuffer for PieceTable {
                         original_piece.buffer,
                         original_piece.start + piece_offset + 1,
                         original_piece.length - piece_offset - 1,
-                        self
+                        self,
                     );
                 }
                 (PieceBody(_, start_offset), PieceBody(_, end_offset)) => {
@@ -386,14 +391,10 @@ impl TextBuffer for PieceTable {
                         left_piece.buffer,
                         left_piece.start + end_offset + 1,
                         left_piece.length - end_offset - 1,
-                        self
+                        self,
                     );
-                    self.pieces[start_piece_index] = Piece::new(
-                        left_piece.buffer,
-                        left_piece.start,
-                        start_offset,
-                        self
-                    );
+                    self.pieces[start_piece_index] =
+                        Piece::new(left_piece.buffer, left_piece.start, start_offset, self);
                     self.pieces.insert(start_piece_index + 1, right_piece);
                 }
                 (PieceHead(_), PieceTail(_)) => {
@@ -405,7 +406,7 @@ impl TextBuffer for PieceTable {
                         original_piece.buffer,
                         original_piece.start,
                         start_offset + 1,
-                        self
+                        self,
                     );
                 }
                 (PieceTail(_), PieceTail(_)) => {
@@ -415,7 +416,8 @@ impl TextBuffer for PieceTable {
                             original_piece.buffer,
                             original_piece.start,
                             original_piece.length - 1,
-                            self);
+                            self,
+                        );
                     } else {
                         &self.pieces.remove(start_piece_index);
                     }
@@ -423,7 +425,10 @@ impl TextBuffer for PieceTable {
                 _ => panic!(),
             }
         }
-        self.length = self.length.checked_sub(range.end - range.start).unwrap_or(0);
+        self.length = self
+            .length
+            .checked_sub(range.end - range.start)
+            .unwrap_or(0);
     }
 }
 
@@ -669,7 +674,12 @@ mod tests {
     fn line_at() {
         let pt = &mut PieceTable::new(vec!['a', 'b']);
         assert_eq!(vec!['a', 'b'], pt.line_at(0).characters);
-        pt.insert_items_at(vec!['\n', 'd', '0', '\n', '2', '3', '4', '5', '6', '7', '\n', '8', '9'], 4);
+        pt.insert_items_at(
+            vec![
+                '\n', 'd', '0', '\n', '2', '3', '4', '5', '6', '7', '\n', '8', '9',
+            ],
+            4,
+        );
         assert_eq!(vec!['d', '0'], pt.line_at(1).characters);
         assert_eq!(vec!['2', '3', '4', '5', '6', '7'], pt.line_at(2).characters);
         assert_eq!(vec!['8', '9'], pt.line_at(3).characters);
@@ -742,7 +752,7 @@ mod tests {
             },
         ];
         pt.length = pt.added.len() + pt.original.len();
-        
+
         pt.remove_item_at(0);
         assert_eq!(
             pt.iter().collect::<Vec<char>>(),

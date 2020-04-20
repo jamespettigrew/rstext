@@ -5,7 +5,10 @@ pub struct Cursor {
 
 impl Cursor {
     pub fn new() -> Cursor {
-        Cursor { line: 0, character: 0 }
+        Cursor {
+            line: 0,
+            character: 0,
+        }
     }
 
     pub fn moved(&mut self, cursor_move: CursorMove) {

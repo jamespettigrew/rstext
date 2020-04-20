@@ -1,4 +1,3 @@
-
 pub struct Window {
     pub height: u16,
     pub width: u16,
@@ -7,7 +6,12 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(height: u16, width: u16, vertical_offset: usize, horizontal_offset: usize) -> Window {
+    pub fn new(
+        height: u16,
+        width: u16,
+        vertical_offset: usize,
+        horizontal_offset: usize,
+    ) -> Window {
         Window {
             height,
             width,

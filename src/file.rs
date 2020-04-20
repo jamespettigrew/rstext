@@ -1,6 +1,6 @@
 use std::fs::File;
-use std::io::prelude::{Read, Write};
 use std::io;
+use std::io::prelude::{Read, Write};
 
 pub fn load(path: &str) -> io::Result<Vec<char>> {
     let file_as_string = match File::open(path) {
@@ -9,7 +9,7 @@ pub fn load(path: &str) -> io::Result<Vec<char>> {
             f.read_to_string(&mut contents)?;
             contents
         }
-        _ => String::new()
+        _ => String::new(),
     };
 
     Ok(file_as_string.chars().collect())

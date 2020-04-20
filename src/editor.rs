@@ -1,15 +1,14 @@
-use crate::cursor::{ Cursor, CursorMove, HorizontalMove, VerticalMove };
+use crate::cursor::{Cursor, CursorMove, HorizontalMove, VerticalMove};
 use crate::file;
 use crate::renderer;
-use crate::text_buffer::TextBuffer;
 use crate::text_buffer::piece_table::PieceTable;
+use crate::text_buffer::TextBuffer;
 use crate::window::Window;
 use std::io::{stdout, Write};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-    execute,
-    terminal,
+    execute, terminal,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
     Result,
 };
@@ -26,7 +25,7 @@ impl<'a> Editor<'a> {
     pub fn new(file_path: Option<&'a str>) -> Editor<'a> {
         let file_contents = match file_path {
             Some(path) => file::load(path).unwrap_or(Vec::new()),
-            _ => Vec::new()
+            _ => Vec::new(),
         };
 
         let text_buffer = PieceTable::new(file_contents);
@@ -39,18 +38,23 @@ impl<'a> Editor<'a> {
             file_path,
             running: false,
             text_buffer,
-            window
+            window,
         }
     }
 
     pub fn start(&mut self) {
         self.running = true;
-        
+
         execute!(stdout(), EnterAlternateScreen);
         terminal::enable_raw_mode();
 
         while self.running {
-            renderer::render(&mut stdout(), &mut self.text_buffer, &mut self.cursor, &mut self.window);
+            renderer::render(
+                &mut stdout(),
+                &mut self.text_buffer,
+                &mut self.cursor,
+                &mut self.window,
+            );
 
             if let Ok(Event::Key(event)) = event::read() {
                 let command = self.map_key_to_command(event);
@@ -74,7 +78,7 @@ impl<'a> Editor<'a> {
             Command::Exit => self.exit(),
             Command::InsertCharacter(c) => self.insert_character(c),
             Command::InsertNewLine => self.insert_newline(),
-            Command::Save => self.save()
+            Command::Save => self.save(),
         }
     }
 
@@ -89,7 +93,7 @@ impl<'a> Editor<'a> {
             (KeyCode::Left, _) => Some(Command::CursorBackward),
             (KeyCode::Right, _) => Some(Command::CursorForward),
             (KeyCode::Up, _) => Some(Command::CursorUp),
-            _ => None
+            _ => None,
         }
     }
 
@@ -118,8 +122,8 @@ impl<'a> Editor<'a> {
             if line_below.characters.len() == 0
                 || (line_below.characters.len() - 1) < self.cursor.character
             {
-                column_delta = (line_below.characters.len() as isize)
-                    - (self.cursor.character as isize)
+                column_delta =
+                    (line_below.characters.len() as isize) - (self.cursor.character as isize)
             }
 
             let cursor_move = CursorMove {
@@ -154,8 +158,8 @@ impl<'a> Editor<'a> {
             if line_above.characters.len() == 0
                 || (line_above.characters.len() - 1) < self.cursor.character
             {
-                column_delta = (line_above.characters.len() as isize)
-                    - (self.cursor.character as isize)
+                column_delta =
+                    (line_above.characters.len() as isize) - (self.cursor.character as isize)
             }
 
             let cursor_move = CursorMove {
@@ -170,7 +174,8 @@ impl<'a> Editor<'a> {
         if self.cursor.character == 0 && self.cursor.line > 0 {
             let line_above = self.text_buffer.line_at(self.cursor.line - 1);
             let new_cursor_column = line_above.characters.len();
-            self.text_buffer.remove_item_at(line_above.start_index + new_cursor_column);
+            self.text_buffer
+                .remove_item_at(line_above.start_index + new_cursor_column);
 
             let column_delta = (new_cursor_column as isize) - (self.cursor.character as isize);
             let cursor_move = CursorMove {
@@ -184,7 +189,8 @@ impl<'a> Editor<'a> {
                 vertical: None,
                 horizontal: Some(HorizontalMove::Left(1)),
             });
-            self.text_buffer.remove_item_at(current_line.start_index + self.cursor.character);
+            self.text_buffer
+                .remove_item_at(current_line.start_index + self.cursor.character);
         }
     }
 
@@ -194,17 +200,19 @@ impl<'a> Editor<'a> {
 
     fn insert_character(&mut self, c: char) {
         let current_line = self.text_buffer.line_at(self.cursor.line);
-        self.text_buffer.insert_item_at(c, current_line.start_index + self.cursor.character);
+        self.text_buffer
+            .insert_item_at(c, current_line.start_index + self.cursor.character);
         let cursor_move = CursorMove {
             vertical: None,
-            horizontal: Some(HorizontalMove::Right(1))
+            horizontal: Some(HorizontalMove::Right(1)),
         };
         self.cursor.moved(cursor_move);
     }
 
     fn insert_newline(&mut self) {
         let current_line = self.text_buffer.line_at(self.cursor.line);
-        self.text_buffer.insert_item_at('\n', current_line.start_index + self.cursor.character);
+        self.text_buffer
+            .insert_item_at('\n', current_line.start_index + self.cursor.character);
 
         let column_delta = 0 - (self.cursor.character as isize);
         let cursor_move = CursorMove {
@@ -219,7 +227,6 @@ impl<'a> Editor<'a> {
             file::save(path, self.text_buffer.all_content());
         }
     }
-
 }
 
 enum Command {
