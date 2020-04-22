@@ -18,6 +18,11 @@ enum IndexLocation {
     EOF,
 }
 
+struct ChangeLocation {
+    index: usize,
+    piece_index: usize,
+}
+
 struct Piece {
     buffer: Buffer,
     start: usize,
@@ -29,7 +34,7 @@ impl Piece {
     fn new(buffer: Buffer, start: usize, length: usize, piece_table: &PieceTable) -> Piece {
         let line_break_offsets =
             piece_table.line_breaks_in_buffer_range(buffer, start..start + length);
-        let mut piece = Piece {
+        let piece = Piece {
             buffer,
             start,
             length,
@@ -45,6 +50,7 @@ pub struct PieceTable {
     added: Vec<char>,
     pieces: Vec<Piece>,
     pub length: usize,
+    last_insert: Option<ChangeLocation>,
 }
 
 impl PieceTable {
@@ -54,6 +60,7 @@ impl PieceTable {
             pieces: Vec::new(),
             original: content,
             added: Vec::new(),
+            last_insert: None,
         };
         piece_table.pieces = vec![Piece::new(Original, 0, piece_table.length, &piece_table)];
 
@@ -123,6 +130,65 @@ impl PieceTable {
         EOF
     }
 
+    fn raw_insert_items_at(&mut self, items: Vec<char>, index: usize) {
+        let location = self.index_location(index);
+        let new_piece = Piece::new(
+            Buffer::Added,
+            self.added.len() - items.len(),
+            items.len(),
+            self,
+        );
+
+        match location {
+            PieceHead(piece_index) => {
+                self.pieces.insert(piece_index, new_piece);
+                self.last_insert = Some(ChangeLocation {
+                    index: index + items.len(),
+                    piece_index: piece_index,
+                });
+            }
+            PieceBody(piece_index, offset) => {
+                let original_piece = &self.pieces[piece_index];
+                let offcut_piece = Piece::new(
+                    original_piece.buffer,
+                    original_piece.start + offset,
+                    original_piece.length - offset,
+                    self,
+                );
+                self.pieces[piece_index] =
+                    Piece::new(original_piece.buffer, original_piece.start, offset, self);
+                self.pieces.insert(piece_index + 1, new_piece);
+                self.last_insert = Some(ChangeLocation {
+                    index: index + items.len(),
+                    piece_index: piece_index + 1,
+                });
+                self.pieces.insert(piece_index + 2, offcut_piece);
+            }
+            PieceTail(piece_index) => {
+                let original_piece = &self.pieces[piece_index];
+                let offcut_piece = Piece::new(
+                    original_piece.buffer,
+                    original_piece.start + original_piece.length - 1,
+                    1,
+                    self,
+                );
+                self.pieces[piece_index] = Piece::new(
+                    original_piece.buffer,
+                    original_piece.start,
+                    original_piece.length - 1,
+                    self,
+                );
+                self.pieces.insert(piece_index + 1, new_piece);
+                self.last_insert = Some(ChangeLocation {
+                    index: index + items.len(),
+                    piece_index: piece_index + 1,
+                });
+                self.pieces.insert(piece_index + 2, offcut_piece);
+            }
+            EOF => self.pieces.push(new_piece),
+        }
+    }
+
     fn line_breaks_in_buffer_range(&self, buffer: Buffer, range: Range<usize>) -> Vec<usize> {
         let mut offsets = Vec::new();
         for (count, index) in range.enumerate() {
@@ -146,50 +212,22 @@ impl TextBuffer for PieceTable {
         self.insert_items_at(vec![item], index);
     }
 
-    fn insert_items_at(&mut self, items: Vec<char>, index: usize) {
-        let location = self.index_location(index);
+    fn insert_items_at(&mut self, items: Vec<char>, at_index: usize) {
         self.added.extend(&items);
-        let new_piece = Piece::new(
-            Buffer::Added,
-            self.added.len() - items.len(),
-            items.len(),
-            self,
-        );
         self.length += items.len();
 
-        match location {
-            PieceHead(piece_index) => self.pieces.insert(piece_index, new_piece),
-            PieceBody(piece_index, offset) => {
-                let original_piece = &self.pieces[piece_index];
-                let offcut_piece = Piece::new(
-                    original_piece.buffer,
-                    original_piece.start + offset,
-                    original_piece.length - offset,
-                    self,
-                );
-                self.pieces[piece_index] =
-                    Piece::new(original_piece.buffer, original_piece.start, offset, self);
-                self.pieces.insert(piece_index + 1, new_piece);
-                self.pieces.insert(piece_index + 2, offcut_piece);
+        match self.last_insert {
+            Some(ChangeLocation { index, piece_index }) if at_index == index + 1 => {
+                let last_insert_piece = &mut self.pieces[piece_index];
+                last_insert_piece.length += items.len();
+                self.last_insert = Some(ChangeLocation {
+                    index: at_index + items.len(),
+                    piece_index
+                });
             }
-            PieceTail(piece_index) => {
-                let original_piece = &self.pieces[piece_index];
-                let offcut_piece = Piece::new(
-                    original_piece.buffer,
-                    original_piece.start + original_piece.length - 1,
-                    1,
-                    self,
-                );
-                self.pieces[piece_index] = Piece::new(
-                    original_piece.buffer,
-                    original_piece.start,
-                    original_piece.length - 1,
-                    self,
-                );
-                self.pieces.insert(piece_index + 1, new_piece);
-                self.pieces.insert(piece_index + 2, offcut_piece);
+            _ => {
+                self.raw_insert_items_at(items, at_index);
             }
-            EOF => self.pieces.push(new_piece),
         }
     }
 
@@ -429,6 +467,7 @@ impl TextBuffer for PieceTable {
             .length
             .checked_sub(range.end - range.start)
             .unwrap_or(0);
+        self.last_insert = None;
     }
 }
 
@@ -492,6 +531,19 @@ impl<'a> Iterator for PieceTableIter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_insertion() {
+        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
+
+        pt.insert_item_at('0', 4);
+        pt.insert_item_at('1', 5);
+        pt.insert_item_at('2', 6);
+        assert_eq!(
+            pt.iter().collect::<Vec<char>>(),
+            vec!['a', 'b', 'c', 'd', '0', '1', '2']
+        );
+    }
 
     #[test]
     fn index() {
