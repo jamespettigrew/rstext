@@ -46,8 +46,8 @@ impl Piece {
 }
 
 pub struct PieceTable {
-    original: Vec<char>,
-    added: Vec<char>,
+    original: String,
+    added: String,
     pieces: Vec<Piece>,
     pub length: usize,
     last_insert: Option<ChangeLocation>,
@@ -55,12 +55,12 @@ pub struct PieceTable {
 }
 
 impl PieceTable {
-    pub fn new(content: Vec<char>) -> PieceTable {
+    pub fn new(content: String) -> PieceTable {
         let mut piece_table = PieceTable {
             length: content.len(),
             pieces: Vec::new(),
             original: content,
-            added: Vec::new(),
+            added: String::new(),
             last_insert: None,
             last_remove: None,
         };
@@ -132,7 +132,7 @@ impl PieceTable {
         EOF
     }
 
-    fn raw_insert_items_at(&mut self, items: Vec<char>, index: usize) {
+    fn raw_insert_items_at(&mut self, items: &str, index: usize) {
         let location = self.index_location(index);
         let new_piece = Piece::new(
             Buffer::Added,
@@ -257,12 +257,13 @@ impl PieceTable {
 
     fn line_breaks_in_buffer_range(&self, buffer: Buffer, range: Range<usize>) -> Vec<usize> {
         let mut offsets = Vec::new();
-        for (count, index) in range.enumerate() {
-            let character = match buffer {
-                Original => self.original[index],
-                Added => self.added[index],
-            };
+        let chars = match buffer {
+            Original => self.original.chars(),
+            Added => self.added.chars()
+        };
 
+        for (count, character) in chars.skip(range.start).take(range.len()).enumerate()
+        {
             match character {
                 '\n' => offsets.push(count),
                 _ => (),
@@ -274,12 +275,36 @@ impl PieceTable {
 }
 
 impl TextBuffer for PieceTable {
-    fn insert_item_at(&mut self, item: char, index: usize) {
-        self.insert_items_at(vec![item], index);
+    fn char_at(&self, index: usize) -> char {
+        let mut index_count = 0usize;
+        for piece in &self.pieces {
+            if index_count + piece.length > index {
+                let buffer = match piece.buffer {
+                    Original => &self.original,
+                    Added => &self.added
+                };
+
+                let character = &buffer
+                    .chars()
+                    .nth(piece.start + index - index_count)
+                    .expect("Piece missing char at expected index");
+
+                return *character;
+            }
+            index_count += piece.length;
+        }
+
+        panic!("Index out of range")
     }
 
-    fn insert_items_at(&mut self, items: Vec<char>, at_index: usize) {
-        self.added.extend(&items);
+    fn insert_item_at(&mut self, item: char, index: usize) {
+        let mut items = String::new();
+        items.push(item);
+        self.insert_items_at(items.as_ref(), index);
+    }
+
+    fn insert_items_at(&mut self, items: &str, at_index: usize) {
+        self.added.push_str(items);
         self.length += items.len();
         self.last_remove = None;
 
@@ -298,7 +323,7 @@ impl TextBuffer for PieceTable {
         }
     }
 
-    fn all_content(&self) -> Vec<char> {
+    fn all_content(&self) -> String {
         self.iter().collect()
     }
 
@@ -433,25 +458,6 @@ struct PieceTableIter<'a> {
     end_piece_offset: usize,
 }
 
-impl Index<usize> for PieceTable {
-    type Output = char;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        let mut index_count = 0usize;
-        for piece in &self.pieces {
-            if index_count + piece.length > index {
-                return match piece.buffer {
-                    Original => &self.original[piece.start + index - index_count],
-                    Added => &self.added[piece.start + index - index_count],
-                };
-            }
-            index_count += piece.length;
-        }
-
-        panic!("Index out of range")
-    }
-}
-
 impl<'a> Iterator for PieceTableIter<'a> {
     type Item = char;
 
@@ -462,23 +468,25 @@ impl<'a> Iterator for PieceTableIter<'a> {
             return None;
         }
 
-        if let Some(current_piece) = self.inner.pieces.get(self.current_piece_index) {
-            if self.current_piece_offset >= current_piece.length {
-                self.current_piece_index += 1;
-                self.current_piece_offset = 0;
-                return self.next();
+        match self.inner.pieces.get(self.current_piece_index) {
+            Some(current_piece) => {
+                if self.current_piece_offset >= current_piece.length {
+                    self.current_piece_index += 1;
+                    self.current_piece_offset = 0;
+                    return self.next();
+                }
+
+                let buffer = match current_piece.buffer {
+                    Original => &self.inner.original,
+                    Added => &self.inner.added
+                };
+                let character = buffer.chars().nth(current_piece.start + self.current_piece_offset);
+                self.current_piece_offset += 1;
+
+                character
             }
-
-            let item = match current_piece.buffer {
-                Original => self.inner.original[current_piece.start + self.current_piece_offset],
-                Added => self.inner.added[current_piece.start + self.current_piece_offset],
-            };
-            self.current_piece_offset += 1;
-
-            return Some(item);
+            _ => None
         }
-
-        None
     }
 }
 
@@ -488,11 +496,13 @@ mod tests {
 
     #[test]
     fn cached_insertion() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
+        let pt = &mut PieceTable::new(String::from("abcd"));
 
         pt.insert_item_at('0', 4);
         pt.insert_item_at('1', 5);
         pt.insert_item_at('2', 6);
+
+        let a =pt.iter().collect::<Vec<char>>();
         assert_eq!(
             pt.iter().collect::<Vec<char>>(),
             vec!['a', 'b', 'c', 'd', '0', '1', '2']
@@ -500,9 +510,9 @@ mod tests {
     }
 
     #[test]
-    fn index() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
-        pt.added = vec!['0', '1', '2', '3'];
+    fn char_at() {
+        let pt = &mut PieceTable::new(String::from("abcd"));
+        pt.added = String::from("0123");
         pt.pieces = vec![
             Piece {
                 buffer: Buffer::Original,
@@ -530,15 +540,15 @@ mod tests {
             },
         ];
 
-        assert_eq!('a', pt[0]);
-        assert_eq!('0', pt[2]);
-        assert_eq!('d', pt[6]);
-        assert_eq!('3', pt[7]);
+        assert_eq!('a', pt.char_at(0));
+        assert_eq!('0', pt.char_at(2));
+        assert_eq!('d', pt.char_at(6));
+        assert_eq!('3', pt.char_at(7));
     }
 
     #[test]
     fn insert_head() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
+        let pt = &mut PieceTable::new(String::from("abcd"));
 
         pt.insert_item_at('0', 0);
         assert_eq!(
@@ -561,8 +571,8 @@ mod tests {
 
     #[test]
     fn insert_body() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
-        pt.insert_items_at(vec!['0', '1', '2'], 2);
+        let pt = &mut PieceTable::new(String::from("abcd"));
+        pt.insert_items_at("012", 2);
 
         assert_eq!(
             pt.iter().collect::<Vec<char>>(),
@@ -578,8 +588,8 @@ mod tests {
 
     #[test]
     fn insert_end() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
-        pt.insert_items_at(vec!['0', '1', '2'], 4);
+        let pt = &mut PieceTable::new(String::from("abcd"));
+        pt.insert_items_at("012", 4);
 
         assert_eq!(
             pt.iter().collect::<Vec<char>>(),
@@ -595,8 +605,8 @@ mod tests {
 
     #[test]
     fn iter() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
-        pt.added = vec!['0', '1', '2', '3'];
+        let pt = &mut PieceTable::new(String::from("abcd"));
+        pt.added = String::from("0123");
         pt.pieces = vec![
             Piece {
                 buffer: Buffer::Original,
@@ -632,8 +642,8 @@ mod tests {
 
     #[test]
     fn iter_range() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
-        pt.added = vec!['0', '1', '2', '3'];
+        let pt = &mut PieceTable::new(String::from("abcd"));
+        pt.added = String::from("0123");
         pt.pieces = vec![
             Piece {
                 buffer: Buffer::Original,
@@ -678,14 +688,9 @@ mod tests {
 
     #[test]
     fn line_at() {
-        let pt = &mut PieceTable::new(vec!['a', 'b']);
+        let pt = &mut PieceTable::new(String::from("ab"));
         assert_eq!(vec!['a', 'b'], pt.line_at(0).characters);
-        pt.insert_items_at(
-            vec![
-                '\n', 'd', '0', '\n', '2', '3', '4', '5', '6', '7', '\n', '8', '9',
-            ],
-            4,
-        );
+        pt.insert_items_at("\nd0\n234567\n89", 4);
         assert_eq!(vec!['d', '0'], pt.line_at(1).characters);
         assert_eq!(vec!['2', '3', '4', '5', '6', '7'], pt.line_at(2).characters);
         assert_eq!(vec!['8', '9'], pt.line_at(3).characters);
@@ -693,7 +698,7 @@ mod tests {
         pt.insert_item_at('\n', 14);
         assert_eq!(vec!['8'], pt.line_at(3).characters);
 
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
+        let pt = &mut PieceTable::new(String::from("abcd"));
         pt.insert_item_at('\n', 2);
         assert_eq!(vec!['a', 'b'], pt.line_at(0).characters);
         assert_eq!(vec!['c', 'd'], pt.line_at(1).characters);
@@ -702,7 +707,7 @@ mod tests {
         assert_eq!(vec!['a', 'b'], pt.line_at(0).characters);
         assert_eq!(vec!['c', 'd'], pt.line_at(1).characters);
 
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
+        let pt = &mut PieceTable::new(String::from("abcd"));
         pt.insert_item_at('\n', 2);
         pt.insert_item_at('c', 2);
         pt.insert_item_at('c', 3);
@@ -710,27 +715,27 @@ mod tests {
         assert_eq!(vec!['c', 'd'], pt.line_at(1).characters);
 
         // Single piece with lines
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd', '\n', 'e', 'f']);
+        let pt = &mut PieceTable::new(String::from("abcd\nef"));
         assert_eq!(vec!['a', 'b', 'c', 'd'], pt.line_at(0).characters);
 
         // Line not at index 0 where multiple pieces and start of next line in same piece
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd', '\n', 'e', 'f', '\n', 'h', 'i']);
-        pt.insert_items_at(vec!['\n', 'j', 'k'], 20);
+        let pt = &mut PieceTable::new(String::from("abcd\nef\nhi"));
+        pt.insert_items_at("\njk", 20);
         assert_eq!(vec!['e', 'f'], pt.line_at(1).characters);
     }
 
     #[test]
     fn line_count() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', '\n', 'd']);
-        pt.insert_items_at(vec!['0', '\n', '2'], 4);
+        let pt = &mut PieceTable::new(String::from("ab\nd"));
+        pt.insert_items_at("0\n2",4);
 
         assert_eq!(3, pt.line_count());
     }
 
     #[test]
     fn remove_head() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
-        pt.added = vec!['0', '1', '2', '3'];
+        let pt = &mut PieceTable::new(String::from("abcd"));
+        pt.added = String::from("0123");
         pt.pieces = vec![
             Piece {
                 buffer: Buffer::Original,
@@ -771,8 +776,8 @@ mod tests {
 
     #[test]
     fn remove_body() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
-        pt.added = vec!['0', '1', '2', '3'];
+        let pt = &mut PieceTable::new(String::from("abcd"));
+        pt.added = String::from("0123");
         pt.pieces = vec![
             Piece {
                 buffer: Buffer::Original,
@@ -813,8 +818,8 @@ mod tests {
 
     #[test]
     fn remove_tail() {
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd']);
-        pt.added = vec!['0', '1', '2', '3'];
+        let pt = &mut PieceTable::new(String::from("abcd"));
+        pt.added = String::from("0123");
         pt.pieces = vec![
             Piece {
                 buffer: Buffer::Original,
@@ -850,8 +855,8 @@ mod tests {
         );
 
         // Remove linebreak from tail
-        let pt = &mut PieceTable::new(vec!['a', 'b', 'c', 'd', '\n']);
-        pt.added = vec!['0', '1', '2', '3'];
+        let pt = &mut PieceTable::new(String::from("abcd\n"));
+        pt.added = String::from("0123");
         pt.pieces = vec![
             Piece {
                 buffer: Buffer::Original,

@@ -8,16 +8,14 @@ const TEXT: &str = include_str!("large.txt");
 
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("insert_random_char", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
         b.iter(|| {
             piece_table.insert_item_at('a', random::<usize>() % piece_table.length);
         });
     });
     c.bench_function("insert_random_small_str", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
-        let items = vec!['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
+        let items = "abcdefg";
         b.iter_batched(
             || items.clone(), 
             |items| {
@@ -27,29 +25,21 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
     });
     c.bench_function("insert_random_large_str", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
-        let items = INSERT_LARGE.chars().collect::<Vec<char>>();
-        b.iter_batched(
-            || items.clone(), 
-            |items| {
-                piece_table.insert_items_at(items, random::<usize>() % piece_table.length);
-            },
-            BatchSize::SmallInput
-        );
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
+        b.iter(|| {
+            piece_table.insert_items_at(INSERT_LARGE, random::<usize>() % piece_table.length)
+        })
     });
 
     c.bench_function("insert_start_char", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
         b.iter(|| {
             piece_table.insert_item_at('a', 0);
         });
     });
     c.bench_function("insert_start_small_str", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
-        let items = vec!['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
+        let items = "abcdefg";
         b.iter_batched(
             || items.clone(), 
             |items| {
@@ -59,29 +49,21 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
     });
     c.bench_function("insert_start_large_str", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
-        let items = INSERT_LARGE.chars().collect::<Vec<char>>();
-        b.iter_batched(
-            || items.clone(), 
-            |items| {
-                piece_table.insert_items_at(items, 0);
-            },
-            BatchSize::SmallInput
-        );
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
+        b.iter(|| {
+            piece_table.insert_items_at(INSERT_LARGE, 0);
+        })
     });
 
     c.bench_function("insert_middle_char", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
         b.iter(|| {
             piece_table.insert_item_at('a', piece_table.length / 2);
         });
     });
     c.bench_function("insert_middle_small_str", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
-        let items = vec!['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
+        let items = "abcdefg";
         b.iter_batched(
             || items.clone(), 
             |items| {
@@ -91,29 +73,21 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
     });
     c.bench_function("insert_middle_large_str", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
-        let items = INSERT_LARGE.chars().collect::<Vec<char>>();
-        b.iter_batched(
-            || items.clone(), 
-            |items| {
-                piece_table.insert_items_at(items, piece_table.length / 2);
-            },
-            BatchSize::SmallInput
-        );
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
+        b.iter(|| {
+            piece_table.insert_items_at(INSERT_LARGE, piece_table.length / 2);
+        })
     });
 
     c.bench_function("insert_end_char", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
         b.iter(|| {
             piece_table.insert_item_at('a', piece_table.length);
         });
     });
     c.bench_function("insert_end_small_str", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
-        let items = vec!['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
+        let items = "abcdefg";
         b.iter_batched(
             || items.clone(), 
             |items| {
@@ -123,16 +97,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
     });
     c.bench_function("insert_end_large_str", |b| {
-        let text = TEXT.chars().collect::<Vec<char>>();
-        let piece_table = &mut PieceTable::new(text);
-        let items = INSERT_LARGE.chars().collect::<Vec<char>>();
-        b.iter_batched(
-            || items.clone(), 
-            |items| {
-                piece_table.insert_items_at(items, piece_table.length);
-            },
-            BatchSize::SmallInput
-        );
+        let piece_table = &mut PieceTable::new(TEXT.to_string());
+        b.iter(|| {
+            piece_table.insert_items_at(INSERT_LARGE, piece_table.length);
+        });
     });
 }
 

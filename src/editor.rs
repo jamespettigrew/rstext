@@ -5,7 +5,7 @@ use crate::renderer;
 use crate::text_buffer::piece_table::PieceTable;
 use crate::text_buffer::TextBuffer;
 use crate::window::Window;
-use std::io::{stdout, Write};
+use std::io::{stdout, Stdout, Write};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -19,6 +19,7 @@ pub struct Editor<'a> {
     cursor: Cursor,
     file_path: Option<&'a str>,
     running: bool,
+    screen: Stdout,
     text_buffer: PieceTable,
     window: Window,
 }
@@ -26,8 +27,8 @@ pub struct Editor<'a> {
 impl<'a> Editor<'a> {
     pub fn new(file_path: Option<&'a str>) -> Editor<'a> {
         let file_contents = match file_path {
-            Some(path) => file::load(path).unwrap_or(Vec::new()),
-            _ => Vec::new(),
+            Some(path) => file::load(path).unwrap_or(String::new()),
+            _ => String::new(),
         };
 
         let text_buffer = PieceTable::new(file_contents);
@@ -37,13 +38,13 @@ impl<'a> Editor<'a> {
         };
         let cursor = Cursor::new();
         let window = Window::new(0, 0, 0, 0);
-        let screen = stdout();
 
         Editor {
             config,
             cursor,
             file_path,
             running: false,
+            screen: stdout(),
             text_buffer,
             window,
         }
@@ -52,12 +53,12 @@ impl<'a> Editor<'a> {
     pub fn start(&mut self) {
         self.running = true;
 
-        execute!(stdout(), EnterAlternateScreen);
+        execute!(self.screen, EnterAlternateScreen);
         terminal::enable_raw_mode();
 
         while self.running {
             renderer::render(
-                &mut stdout(),
+                &mut self.screen,
                 &mut self.text_buffer,
                 &mut self.cursor,
                 &mut self.window,
@@ -72,7 +73,7 @@ impl<'a> Editor<'a> {
             }
         }
 
-        execute!(stdout(), LeaveAlternateScreen);
+        execute!(self.screen, LeaveAlternateScreen);
         terminal::disable_raw_mode();
     }
 
@@ -235,8 +236,8 @@ impl<'a> Editor<'a> {
     fn insert_tab(&mut self) {
         let current_line = self.text_buffer.line_at(self.cursor.line);
         let to_insert = match self.config.indentation {
-            IndentationPreference::Tabs => vec!['\t'],
-            IndentationPreference::Spaces => vec![' '; self.config.tab_width as usize]
+            IndentationPreference::Tabs => String::from("\t"),
+            IndentationPreference::Spaces => vec![' '; self.config.tab_width as usize].into_iter().collect()
         };
 
         let cursor_move = CursorMove {
@@ -244,7 +245,7 @@ impl<'a> Editor<'a> {
             horizontal: Some(HorizontalMove::Right(to_insert.len())),
         };
         self.text_buffer
-            .insert_items_at(to_insert, current_line.start_index + self.cursor.character);
+            .insert_items_at(&to_insert, current_line.start_index + self.cursor.character);
         self.cursor.moved(cursor_move);
     }
 

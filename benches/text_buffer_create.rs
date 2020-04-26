@@ -7,18 +7,15 @@ const TEXT_LARGE: &str = include_str!("large.txt");
 
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("create_small", |b| {
-        let text_small = TEXT_SMALL.chars().collect::<Vec<char>>();
-        b.iter_batched(|| text_small.clone(), |data| PieceTable::new(data), BatchSize::SmallInput);
+        b.iter_batched(|| TEXT_SMALL.to_string(), |data| PieceTable::new(data), BatchSize::SmallInput);
     });
 
     c.bench_function("create_medium", |b| {
-        let text = TEXT_MEDIUM.chars().collect::<Vec<char>>();
-        b.iter_batched(|| text.clone(), |data| PieceTable::new(data), BatchSize::SmallInput);
+        b.iter_batched(|| TEXT_MEDIUM.to_string(), |data| PieceTable::new(data), BatchSize::SmallInput);
     });
 
     c.bench_function("create_large", |b| {
-        let text = TEXT_LARGE.chars().collect::<Vec<char>>();
-        b.iter_batched(|| text.clone(), |data| PieceTable::new(data), BatchSize::SmallInput);
+        b.iter_batched(|| TEXT_LARGE.to_string(), |data| PieceTable::new(data), BatchSize::SmallInput);
     });
 }
 
