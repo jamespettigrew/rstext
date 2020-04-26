@@ -51,6 +51,7 @@ pub struct PieceTable {
     pieces: Vec<Piece>,
     pub length: usize,
     last_insert: Option<ChangeLocation>,
+    last_remove: Option<ChangeLocation>,
 }
 
 impl PieceTable {
@@ -61,6 +62,7 @@ impl PieceTable {
             original: content,
             added: Vec::new(),
             last_insert: None,
+            last_remove: None,
         };
         piece_table.pieces = vec![Piece::new(Original, 0, piece_table.length, &piece_table)];
 
@@ -189,6 +191,70 @@ impl PieceTable {
         }
     }
 
+    fn raw_remove_item_at(&mut self, at_index: usize) {
+        let location = self.index_location(at_index);
+        let cached_piece_index: Option<usize> = match location {
+            PieceHead(piece_index) => {
+                let original_piece = &self.pieces[piece_index];
+
+                if original_piece.length <= 1 {
+                    self.pieces.remove(piece_index);
+                    None
+                } else {
+                    let new_piece = Piece::new(
+                        original_piece.buffer,
+                        original_piece.start + 1,
+                        original_piece.length - 1,
+                        self,
+                    );
+                    self.pieces[piece_index] = new_piece;
+
+                    Some(piece_index)
+                }
+            }
+            PieceBody(piece_index, piece_offset) => {
+                let original_piece = &self.pieces[piece_index];
+                let new_piece = Piece::new(
+                    original_piece.buffer,
+                    original_piece.start + piece_offset + 1,
+                    original_piece.length - piece_offset - 1,
+                    self,
+                );
+                self.pieces[piece_index] = Piece::new(
+                    original_piece.buffer,
+                    original_piece.start,
+                    piece_offset,
+                    self,
+                );
+                self.pieces.insert(piece_index + 1, new_piece);
+
+                Some(piece_index)
+            }
+            PieceTail(piece_index) => {
+                let original_piece = &mut self.pieces[piece_index];
+                self.pieces[piece_index] = Piece::new(
+                    original_piece.buffer,
+                    original_piece.start,
+                    original_piece.length - 1,
+                    self,
+                );
+
+                Some(piece_index)
+            }
+            EOF => panic!("Attempted to remove from EOF"),
+        };
+
+        self.last_remove = match cached_piece_index {
+            Some(cached_piece_index) => Some(ChangeLocation {
+                index: at_index,
+                piece_index: cached_piece_index,
+            }),
+            None => None,
+        };
+
+        self.length = self.length.checked_sub(1).unwrap_or(0);
+    }
+
     fn line_breaks_in_buffer_range(&self, buffer: Buffer, range: Range<usize>) -> Vec<usize> {
         let mut offsets = Vec::new();
         for (count, index) in range.enumerate() {
@@ -215,6 +281,7 @@ impl TextBuffer for PieceTable {
     fn insert_items_at(&mut self, items: Vec<char>, at_index: usize) {
         self.added.extend(&items);
         self.length += items.len();
+        self.last_remove = None;
 
         match self.last_insert {
             Some(ChangeLocation { index, piece_index }) if at_index == index + 1 => {
@@ -222,7 +289,7 @@ impl TextBuffer for PieceTable {
                 last_insert_piece.length += items.len();
                 self.last_insert = Some(ChangeLocation {
                     index: at_index + items.len(),
-                    piece_index
+                    piece_index,
                 });
             }
             _ => {
@@ -302,8 +369,49 @@ impl TextBuffer for PieceTable {
             .fold(1, |count, piece| piece.line_break_offsets.len() + count)
     }
 
-    fn remove_item_at(&mut self, index: usize) {
-        self.remove_items(index..index + 1);
+    fn remove_item_at(&mut self, at_index: usize) {
+        self.last_insert = None;
+
+        match self.last_remove {
+            Some(ChangeLocation { index, piece_index }) if index == at_index - 1 => {
+                let original_piece = &self.pieces[piece_index];
+
+                if original_piece.length <= 1 {
+                    self.pieces.remove(piece_index);
+                    match piece_index.checked_sub(1) {
+                        Some(new_piece_index) => {
+                            self.last_remove = if self.pieces.len() > new_piece_index {
+                                Some(ChangeLocation {
+                                    index: at_index - 1,
+                                    piece_index: new_piece_index - 1,
+                                })
+                            } else {
+                                None
+                            }
+                        }
+                        None => {
+                            self.last_remove = None;
+                        }
+                    }
+                } else {
+                    let new_piece = Piece::new(
+                        original_piece.buffer,
+                        original_piece.start,
+                        original_piece.length - 1,
+                        self,
+                    );
+                    self.pieces[piece_index] = new_piece;
+
+                    self.last_remove = Some(ChangeLocation {
+                        index: at_index - 1,
+                        piece_index,
+                    });
+                }
+            }
+            _ => {
+                self.raw_remove_item_at(at_index);
+            }
+        }
     }
 
     fn remove_items(&mut self, range: Range<usize>) {
@@ -311,163 +419,9 @@ impl TextBuffer for PieceTable {
             return;
         }
 
-        let start_location = self.index_location(range.start);
-        let end_location = self.index_location(range.end - 1);
-
-        let start_piece_index = match start_location {
-            PieceHead(piece_index) => piece_index,
-            PieceBody(piece_index, _) => piece_index,
-            PieceTail(piece_index) => piece_index,
-            EOF => panic!("Cannot remove from EOF"),
-        };
-
-        let mut end_piece_index = match end_location {
-            PieceHead(piece_index) => piece_index,
-            PieceBody(piece_index, _) => piece_index,
-            PieceTail(piece_index) => piece_index,
-            EOF => self.pieces.len(),
-        };
-
-        if start_piece_index < end_piece_index {
-            let drained_length = self
-                .pieces
-                .drain(start_piece_index + 1..end_piece_index)
-                .len();
-            end_piece_index -= drained_length;
-
-            match start_location {
-                PieceHead(_) => {
-                    self.pieces.remove(start_piece_index);
-                    end_piece_index -= 1;
-                }
-                PieceBody(_, piece_offset) => {
-                    let original_piece = &self.pieces[start_piece_index];
-                    self.pieces[start_piece_index] = Piece::new(
-                        original_piece.buffer,
-                        original_piece.start,
-                        piece_offset,
-                        self,
-                    );
-                }
-                PieceTail(_) => {
-                    let original_piece = &self.pieces[start_piece_index];
-                    self.pieces[start_piece_index] = Piece::new(
-                        original_piece.buffer,
-                        original_piece.start,
-                        original_piece.length - 1,
-                        self,
-                    );
-                }
-                EOF => {}
-            };
-
-            match end_location {
-                PieceHead(_) => {
-                    let original_piece = &self.pieces[end_piece_index];
-                    let new_piece = Piece::new(
-                        original_piece.buffer,
-                        original_piece.start + 1,
-                        original_piece.length - 1,
-                        self,
-                    );
-
-                    match new_piece.length {
-                        x if x >= 1 => {
-                            self.pieces[end_piece_index] = new_piece;
-                        }
-                        _ => {
-                            self.pieces.remove(end_piece_index);
-                        }
-                    }
-                }
-                PieceBody(_, piece_offset) => {
-                    let original_piece = &self.pieces[end_piece_index];
-                    self.pieces[end_piece_index] = Piece::new(
-                        original_piece.buffer,
-                        original_piece.start + piece_offset + 1,
-                        original_piece.length - piece_offset - 1,
-                        self,
-                    );
-                }
-                PieceTail(_) => {
-                    self.pieces.remove(end_piece_index);
-                }
-                EOF => {}
-            };
-        } else if start_piece_index == end_piece_index {
-            match (start_location, end_location) {
-                (PieceHead(_), PieceHead(_)) => {
-                    let original_piece = &self.pieces[start_piece_index];
-                    let new_piece = Piece::new(
-                        original_piece.buffer,
-                        original_piece.start + 1,
-                        original_piece.length - 1,
-                        self,
-                    );
-
-                    match new_piece.length {
-                        x if x >= 1 => {
-                            self.pieces[end_piece_index] = new_piece;
-                        }
-                        _ => {
-                            self.pieces.remove(end_piece_index);
-                        }
-                    }
-                }
-                (PieceHead(_), PieceBody(_, piece_offset)) => {
-                    let original_piece = &self.pieces[start_piece_index];
-                    self.pieces[start_piece_index] = Piece::new(
-                        original_piece.buffer,
-                        original_piece.start + piece_offset + 1,
-                        original_piece.length - piece_offset - 1,
-                        self,
-                    );
-                }
-                (PieceBody(_, start_offset), PieceBody(_, end_offset)) => {
-                    let left_piece = &self.pieces[start_piece_index];
-                    let right_piece = Piece::new(
-                        left_piece.buffer,
-                        left_piece.start + end_offset + 1,
-                        left_piece.length - end_offset - 1,
-                        self,
-                    );
-                    self.pieces[start_piece_index] =
-                        Piece::new(left_piece.buffer, left_piece.start, start_offset, self);
-                    self.pieces.insert(start_piece_index + 1, right_piece);
-                }
-                (PieceHead(_), PieceTail(_)) => {
-                    self.pieces.remove(start_piece_index);
-                }
-                (PieceBody(_, start_offset), PieceTail(_)) => {
-                    let original_piece = &self.pieces[start_piece_index];
-                    self.pieces[start_piece_index] = Piece::new(
-                        original_piece.buffer,
-                        original_piece.start,
-                        start_offset + 1,
-                        self,
-                    );
-                }
-                (PieceTail(_), PieceTail(_)) => {
-                    let original_piece = &self.pieces[start_piece_index];
-                    if original_piece.length.checked_sub(1).is_some() {
-                        self.pieces[start_piece_index] = Piece::new(
-                            original_piece.buffer,
-                            original_piece.start,
-                            original_piece.length - 1,
-                            self,
-                        );
-                    } else {
-                        &self.pieces.remove(start_piece_index);
-                    }
-                }
-                _ => panic!(),
-            }
+        for i in range.rev() {
+            self.remove_item_at(i);
         }
-        self.length = self
-            .length
-            .checked_sub(range.end - range.start)
-            .unwrap_or(0);
-        self.last_insert = None;
     }
 }
 
