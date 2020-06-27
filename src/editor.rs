@@ -78,6 +78,7 @@ impl<'a> Editor<'a> {
             Command::Exit => self.exit(),
             Command::InsertCharacter(c) => self.insert_character(c),
             Command::InsertNewLine => self.insert_newline(),
+            Command::InsertTab => self.insert_tab(),
             Command::Save => self.save(),
         }
     }
@@ -93,6 +94,7 @@ impl<'a> Editor<'a> {
             (KeyCode::Left, _) => Some(Command::CursorBackward),
             (KeyCode::Right, _) => Some(Command::CursorForward),
             (KeyCode::Up, _) => Some(Command::CursorUp),
+            (KeyCode::Tab, _) => Some(Command::InsertTab),
             _ => None,
         }
     }
@@ -222,6 +224,18 @@ impl<'a> Editor<'a> {
         self.cursor.moved(cursor_move);
     }
 
+    fn insert_tab(&mut self) {
+        let current_line = self.text_buffer.line_at(self.cursor.line);
+        let to_insert = vec![' ', ' ', ' ', ' '];
+        let cursor_move = CursorMove {
+            vertical: None,
+            horizontal: Some(HorizontalMove::Right(to_insert.len())),
+        };
+        self.text_buffer
+            .insert_items_at(to_insert, current_line.start_index + self.cursor.character);
+        self.cursor.moved(cursor_move);
+    }
+
     fn save(&mut self) {
         if let Some(path) = self.file_path {
             file::save(path, self.text_buffer.all_content());
@@ -238,5 +252,6 @@ enum Command {
     Exit,
     InsertCharacter(char),
     InsertNewLine,
+    InsertTab,
     Save,
 }
