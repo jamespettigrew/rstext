@@ -61,6 +61,7 @@ impl<'a> Editor<'a> {
                 &mut self.text_buffer,
                 &mut self.cursor,
                 &mut self.window,
+                &self.config
             );
 
             if let Ok(Event::Key(event)) = event::read() {

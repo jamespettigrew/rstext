@@ -1,3 +1,4 @@
+use crate::config::{EditorConfig, IndentationPreference};
 use crate::cursor::Cursor;
 use crate::grapheme;
 use crate::text_buffer;
@@ -70,6 +71,7 @@ pub fn render(
     text_buffer: &dyn TextBuffer,
     cursor: &Cursor,
     window: &mut Window,
+    editor_config: &EditorConfig
 ) {
     queue!(screen, Clear(ClearType::All), Hide);
 
@@ -78,7 +80,7 @@ pub fn render(
     window.resize(terminal_height - 1, terminal_width - line_number_columns);
 
     let current_line = text_buffer.line_at(cursor.line);
-    let graphemes = &Grapheme::from_line(&current_line);
+    let graphemes = &Grapheme::from_line(&current_line, editor_config.tab_width);
     let absolute_cursor_position = &calc_absolute_cursor_position(cursor, graphemes);
     window.update_offsets(
         absolute_cursor_position.row,
@@ -117,7 +119,7 @@ pub fn render(
             MoveTo(line_number_columns, line_count as u16)
         );
 
-        let graphemes = &Grapheme::from_line(&line);
+        let graphemes = &Grapheme::from_line(&line, editor_config.tab_width);
         let graphemes = grapheme::visible_in_window(graphemes, window);
         let styled_graphemes = graphemes
             .iter()

@@ -79,8 +79,12 @@ pub fn visible_in_window(graphemes: &Vec<Grapheme>, window: &Window) -> Vec<Grap
 impl Grapheme {
     // No robust way that I know of to determine the visual width of a grapheme (cluster).
     // Instead, any unicode characters beyond latin-1 set will be escaped to angle bracket form.
-    pub fn from(ch: char) -> Grapheme {
+    pub fn from(ch: char, tab_width: u8) -> Grapheme {
         match ch {
+            '\t' => Grapheme {
+                content: vec![' '; tab_width as usize].into_iter().collect(),
+                is_escaped: false,
+            },
             ch if ch < 'ǿ' => Grapheme {
                 content: ch.to_string(),
                 is_escaped: false,
@@ -101,10 +105,10 @@ impl Grapheme {
         }
     }
 
-    pub fn from_line(line: &Line) -> Vec<Grapheme> {
+    pub fn from_line(line: &Line, tab_width: u8) -> Vec<Grapheme> {
         let mut graphemes = vec![];
         for ch in line.characters.iter() {
-            graphemes.push(Grapheme::from(*ch));
+            graphemes.push(Grapheme::from(*ch, tab_width));
         }
 
         graphemes
@@ -374,6 +378,15 @@ mod tests {
     }
 
     #[test]
+    fn tab_width() {
+        let grapheme = Grapheme::from('\t', 4);
+        assert_eq!(grapheme.content, String::from("    "));
+
+        let grapheme = Grapheme::from('\t', 8);
+        assert_eq!(grapheme.content, String::from("        "));
+    }
+
+    #[test]
     fn trimmed_escaped_graphemes() {
         let window = &mut Window {
             height: 5,
@@ -384,7 +397,7 @@ mod tests {
 
         let graphemes = &String::from("👨‍👩‍👧 ")
             .chars()
-            .map(|c| Grapheme::from(c))
+            .map(|c| Grapheme::from(c, 1))
             .collect::<Vec<Grapheme>>();
 
         window.horizontal_offset = 0;
