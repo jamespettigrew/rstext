@@ -1,3 +1,4 @@
+use crate::config::{EditorConfig, IndentationPreference};
 use crate::cursor::{Cursor, CursorMove, HorizontalMove, VerticalMove};
 use crate::file;
 use crate::renderer;
@@ -14,6 +15,7 @@ use crossterm::{
 };
 
 pub struct Editor<'a> {
+    config: EditorConfig,
     cursor: Cursor,
     file_path: Option<&'a str>,
     running: bool,
@@ -29,11 +31,16 @@ impl<'a> Editor<'a> {
         };
 
         let text_buffer = PieceTable::new(file_contents);
+        let config = EditorConfig {
+            tab_width: 4,
+            indentation: IndentationPreference::Tabs,
+        };
         let cursor = Cursor::new();
         let window = Window::new(0, 0, 0, 0);
         let screen = stdout();
 
         Editor {
+            config,
             cursor,
             file_path,
             running: false,
@@ -226,7 +233,11 @@ impl<'a> Editor<'a> {
 
     fn insert_tab(&mut self) {
         let current_line = self.text_buffer.line_at(self.cursor.line);
-        let to_insert = vec![' ', ' ', ' ', ' '];
+        let to_insert = match self.config.indentation {
+            IndentationPreference::Tabs => vec!['\t'],
+            IndentationPreference::Spaces => vec![' '; self.config.tab_width as usize]
+        };
+
         let cursor_move = CursorMove {
             vertical: None,
             horizontal: Some(HorizontalMove::Right(to_insert.len())),
