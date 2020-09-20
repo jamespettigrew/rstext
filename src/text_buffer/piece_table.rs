@@ -24,9 +24,13 @@ struct ChangeRecord {
 }
 
 struct Piece {
+    /// Associated PieceTable buffer.
     buffer: Buffer,
+    /// Byte index of piece start within buffer.
     start: usize,
+    /// Length (in bytes, from start index) of piece within buffer.
     length: usize,
+    /// Index offsets (from start) of line breaks within buffer region spanned by this piece.
     line_break_offsets: Vec<usize>,
 }
 
