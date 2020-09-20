@@ -18,7 +18,7 @@ enum IndexLocation {
     EOF,
 }
 
-struct ChangeLocation {
+struct ChangeRecord {
     index: usize,
     piece_index: usize,
 }
@@ -54,8 +54,8 @@ pub struct PieceTable {
     added: String,
     pieces: Vec<Piece>,
     pub length: usize,
-    last_insert: Option<ChangeLocation>,
-    last_remove: Option<ChangeLocation>,
+    last_insert: Option<ChangeRecord>,
+    last_remove: Option<ChangeRecord>,
 }
 
 impl PieceTable {
@@ -148,7 +148,7 @@ impl PieceTable {
         match location {
             PieceHead(piece_index) => {
                 self.pieces.insert(piece_index, new_piece);
-                self.last_insert = Some(ChangeLocation {
+                self.last_insert = Some(ChangeRecord {
                     index: index + items.len(),
                     piece_index: piece_index,
                 });
@@ -164,7 +164,7 @@ impl PieceTable {
                 self.pieces[piece_index] =
                     Piece::new(original_piece.buffer, original_piece.start, offset, self);
                 self.pieces.insert(piece_index + 1, new_piece);
-                self.last_insert = Some(ChangeLocation {
+                self.last_insert = Some(ChangeRecord {
                     index: index + items.len(),
                     piece_index: piece_index + 1,
                 });
@@ -185,7 +185,7 @@ impl PieceTable {
                     self,
                 );
                 self.pieces.insert(piece_index + 1, new_piece);
-                self.last_insert = Some(ChangeLocation {
+                self.last_insert = Some(ChangeRecord {
                     index: index + items.len(),
                     piece_index: piece_index + 1,
                 });
@@ -249,7 +249,7 @@ impl PieceTable {
         };
 
         self.last_remove = match cached_piece_index {
-            Some(cached_piece_index) => Some(ChangeLocation {
+            Some(cached_piece_index) => Some(ChangeRecord {
                 index: at_index,
                 piece_index: cached_piece_index,
             }),
@@ -273,10 +273,10 @@ impl TextBuffer for PieceTable {
         self.last_remove = None;
 
         match self.last_insert {
-            Some(ChangeLocation { index, piece_index }) if at_index == index + 1 => {
+            Some(ChangeRecord { index, piece_index }) if at_index == index + 1 => {
                 let last_insert_piece = &mut self.pieces[piece_index];
                 last_insert_piece.length += items.len();
-                self.last_insert = Some(ChangeLocation {
+                self.last_insert = Some(ChangeRecord {
                     index: at_index + items.len(),
                     piece_index,
                 });
@@ -362,7 +362,7 @@ impl TextBuffer for PieceTable {
         self.last_insert = None;
 
         match self.last_remove {
-            Some(ChangeLocation { index, piece_index }) if index == at_index - 1 => {
+            Some(ChangeRecord { index, piece_index }) if index == at_index - 1 => {
                 let original_piece = &self.pieces[piece_index];
 
                 if original_piece.length <= 1 {
@@ -370,7 +370,7 @@ impl TextBuffer for PieceTable {
                     match piece_index.checked_sub(1) {
                         Some(new_piece_index) => {
                             self.last_remove = if self.pieces.len() > new_piece_index {
-                                Some(ChangeLocation {
+                                Some(ChangeRecord {
                                     index: at_index - 1,
                                     piece_index: new_piece_index - 1,
                                 })
@@ -391,7 +391,7 @@ impl TextBuffer for PieceTable {
                     );
                     self.pieces[piece_index] = new_piece;
 
-                    self.last_remove = Some(ChangeLocation {
+                    self.last_remove = Some(ChangeRecord {
                         index: at_index - 1,
                         piece_index,
                     });
