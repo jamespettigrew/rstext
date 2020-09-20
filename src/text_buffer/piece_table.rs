@@ -275,28 +275,6 @@ impl PieceTable {
 }
 
 impl TextBuffer for PieceTable {
-    fn char_at(&self, index: usize) -> char {
-        let mut index_count = 0usize;
-        for piece in &self.pieces {
-            if index_count + piece.length > index {
-                let buffer = match piece.buffer {
-                    Original => &self.original,
-                    Added => &self.added
-                };
-
-                let character = &buffer
-                    .chars()
-                    .nth(piece.start + index - index_count)
-                    .expect("Piece missing char at expected index");
-
-                return *character;
-            }
-            index_count += piece.length;
-        }
-
-        panic!("Index out of range")
-    }
-
     fn insert_item_at(&mut self, item: char, index: usize) {
         let mut items = String::new();
         items.push(item);
@@ -507,43 +485,6 @@ mod tests {
             pt.iter().collect::<Vec<char>>(),
             vec!['a', 'b', 'c', 'd', '0', '1', '2']
         );
-    }
-
-    #[test]
-    fn char_at() {
-        let pt = &mut PieceTable::new(String::from("abcd"));
-        pt.added = String::from("0123");
-        pt.pieces = vec![
-            Piece {
-                buffer: Buffer::Original,
-                start: 0,
-                length: 2,
-                line_break_offsets: Vec::new(),
-            },
-            Piece {
-                buffer: Buffer::Added,
-                start: 0,
-                length: 3,
-                line_break_offsets: Vec::new(),
-            },
-            Piece {
-                buffer: Buffer::Original,
-                start: 2,
-                length: 2,
-                line_break_offsets: Vec::new(),
-            },
-            Piece {
-                buffer: Buffer::Added,
-                start: 3,
-                length: 1,
-                line_break_offsets: Vec::new(),
-            },
-        ];
-
-        assert_eq!('a', pt.char_at(0));
-        assert_eq!('0', pt.char_at(2));
-        assert_eq!('d', pt.char_at(6));
-        assert_eq!('3', pt.char_at(7));
     }
 
     #[test]

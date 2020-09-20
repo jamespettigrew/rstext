@@ -8,7 +8,6 @@ pub trait TextBuffer {
     fn insert_item_at(&mut self, item: char, index: usize);
     fn insert_items_at(&mut self, items: &str, index: usize);
     fn all_content(&self) -> String;
-    fn char_at(&self, index: usize) -> char;
     fn line_at(&self, row: usize) -> Line;
     fn line_count(&self) -> usize;
     fn remove_item_at(&mut self, index: usize);
