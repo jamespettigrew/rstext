@@ -32,8 +32,12 @@ struct Piece {
 
 impl Piece {
     fn new(buffer: Buffer, start: usize, length: usize, piece_table: &PieceTable) -> Piece {
-        let line_break_offsets =
-            piece_table.line_breaks_in_buffer_range(buffer, start..start + length);
+        let buffer_contents = match buffer {
+            Added => &piece_table.added,
+            Original => &piece_table.original,
+        };
+        let line_break_offsets = line_break_offsets(&buffer_contents[start..start + length]);
+
         let piece = Piece {
             buffer,
             start,
@@ -254,24 +258,6 @@ impl PieceTable {
 
         self.length = self.length.checked_sub(1).unwrap_or(0);
     }
-
-    fn line_breaks_in_buffer_range(&self, buffer: Buffer, range: Range<usize>) -> Vec<usize> {
-        let mut offsets = Vec::new();
-        let chars = match buffer {
-            Original => self.original.chars(),
-            Added => self.added.chars()
-        };
-
-        for (count, character) in chars.skip(range.start).take(range.len()).enumerate()
-        {
-            match character {
-                '\n' => offsets.push(count),
-                _ => (),
-            }
-        }
-
-        offsets
-    }
 }
 
 impl TextBuffer for PieceTable {
@@ -466,6 +452,15 @@ impl<'a> Iterator for PieceTableIter<'a> {
             _ => None
         }
     }
+}
+
+fn line_break_offsets(s: &str) -> Vec<usize> {
+    s.char_indices()
+        .filter_map(|(i, c)| match c {
+            '\n' => Some(i),
+            _ => None,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -663,6 +658,16 @@ mod tests {
         let pt = &mut PieceTable::new(String::from("abcd\nef\nhi"));
         pt.insert_items_at("\njk", 20);
         assert_eq!(vec!['e', 'f'], pt.line_at(1).characters);
+    }
+
+    fn line_break_offsets_correct() {
+        let mut line = String::from("");
+        let mut offsets = line_break_offsets(&line);
+        assert_eq!(vec![0usize; 0], offsets);
+
+        line = String::from("abc\ndef\nghijk\nl");
+        offsets = line_break_offsets(&line);
+        assert_eq!(vec![3, 7, 13], offsets);
     }
 
     #[test]
