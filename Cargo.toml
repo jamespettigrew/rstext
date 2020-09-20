@@ -6,5 +6,18 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[dev-dependencies]
+criterion = "0.3.3"
+rand = "0.7.3"
+
 [dependencies]
 crossterm = "0.17.5"
+
+# --- Benches ---
+[[bench]]
+name = "text_buffer_create"
+harness = false
+
+[[bench]]
+name = "text_buffer_insert"
+harness = false

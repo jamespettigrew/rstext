@@ -1,13 +1,4 @@
-mod config;
-mod cursor;
-mod editor;
-mod file;
-mod grapheme;
-mod renderer;
-mod text_buffer;
-mod window;
-
-use editor::Editor;
+use rstext::editor::Editor;
 use std::env;
 
 fn main() {
