@@ -448,8 +448,14 @@ impl<'a> Iterator for PieceTableIter<'a> {
                     Original => &self.inner.original,
                     Added => &self.inner.added
                 };
-                let character = buffer.chars().nth(current_piece.start + self.current_piece_offset);
-                self.current_piece_offset += 1;
+
+                let character = buffer[current_piece.start + self.current_piece_offset..]
+                    .chars()
+                    .next();
+
+                if let Some(character) = character {
+                    self.current_piece_offset += character.len_utf8();
+                };
 
                 character
             }
