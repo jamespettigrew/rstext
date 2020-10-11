@@ -21,3 +21,7 @@ harness = false
 [[bench]]
 name = "text_buffer_insert"
 harness = false
+
+[[bench]]
+name = "text_buffer_line_content"
+harness = false
