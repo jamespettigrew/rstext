@@ -1,15 +1,9 @@
 use crate::text_buffer::{Line, TextBuffer};
+use crate::text_buffer::piece::{ line_break_offsets, Buffer, Piece};
 use std::iter::Iterator;
 use std::ops::{Index, Range};
 
-use Buffer::*;
 use IndexLocation::*;
-
-#[derive(Copy, Clone)]
-enum Buffer {
-    Original,
-    Added,
-}
 
 enum IndexLocation {
     PieceHead(usize),
@@ -21,36 +15,6 @@ enum IndexLocation {
 struct ChangeRecord {
     index: usize,
     piece_index: usize,
-}
-
-struct Piece {
-    /// Associated PieceTable buffer.
-    buffer: Buffer,
-    /// Byte index of piece start within buffer.
-    start: usize,
-    /// Length (in bytes, from start index) of piece within buffer.
-    length: usize,
-    /// Index offsets (from start) of line breaks within buffer region spanned by this piece.
-    line_break_offsets: Vec<usize>,
-}
-
-impl Piece {
-    fn new(buffer: Buffer, start: usize, length: usize, piece_table: &PieceTable) -> Piece {
-        let buffer_contents = match buffer {
-            Added => &piece_table.added,
-            Original => &piece_table.original,
-        };
-        let line_break_offsets = line_break_offsets(&buffer_contents[start..start + length]);
-
-        let piece = Piece {
-            buffer,
-            start,
-            length,
-            line_break_offsets,
-        };
-
-        piece
-    }
 }
 
 pub struct PieceTable {
@@ -72,9 +36,26 @@ impl PieceTable {
             last_insert: None,
             last_remove: None,
         };
-        piece_table.pieces = vec![Piece::new(Original, 0, piece_table.length, &piece_table)];
+        piece_table.pieces = vec![piece_table.create_piece(Buffer::Original, 0, piece_table.length)];
 
         piece_table
+    }
+
+    fn create_piece(&self, buffer: Buffer, start: usize, length: usize) -> Piece {
+        let buffer_contents = match buffer {
+            Buffer::Added => &self.added,
+            Buffer::Original => &self.original,
+        };
+        let line_break_offsets = line_break_offsets(&buffer_contents[start..start + length]);
+
+        let piece = Piece {
+            buffer,
+            start,
+            length,
+            line_break_offsets,
+        };
+
+        piece
     }
 
     fn iter<'a>(&'a self) -> PieceTableIter<'a> {
@@ -142,11 +123,10 @@ impl PieceTable {
 
     fn raw_insert_items_at(&mut self, items: &str, index: usize) {
         let location = self.index_location(index);
-        let new_piece = Piece::new(
+        let new_piece = self.create_piece(
             Buffer::Added,
             self.added.len() - items.len(),
-            items.len(),
-            self,
+            items.len()
         );
 
         match location {
@@ -158,42 +138,25 @@ impl PieceTable {
                 });
             }
             PieceBody(piece_index, offset) => {
-                let original_piece = &self.pieces[piece_index];
-                let offcut_piece = Piece::new(
-                    original_piece.buffer,
-                    original_piece.start + offset,
-                    original_piece.length - offset,
-                    self,
-                );
-                self.pieces[piece_index] =
-                    Piece::new(original_piece.buffer, original_piece.start, offset, self);
+                let (left, right) = self.pieces[piece_index].split_at(offset);
+                self.pieces[piece_index] = left;
                 self.pieces.insert(piece_index + 1, new_piece);
+                self.pieces.insert(piece_index + 2, right);
                 self.last_insert = Some(ChangeRecord {
                     index: index + items.len(),
                     piece_index: piece_index + 1,
                 });
-                self.pieces.insert(piece_index + 2, offcut_piece);
             }
             PieceTail(piece_index) => {
                 let original_piece = &self.pieces[piece_index];
-                let offcut_piece = Piece::new(
-                    original_piece.buffer,
-                    original_piece.start + original_piece.length - 1,
-                    1,
-                    self,
-                );
-                self.pieces[piece_index] = Piece::new(
-                    original_piece.buffer,
-                    original_piece.start,
-                    original_piece.length - 1,
-                    self,
-                );
+                let (left, right) = self.pieces[piece_index].split_at(original_piece.length - 1);
+                self.pieces[piece_index] = left;
                 self.pieces.insert(piece_index + 1, new_piece);
+                self.pieces.insert(piece_index + 2, right);
                 self.last_insert = Some(ChangeRecord {
                     index: index + items.len(),
                     piece_index: piece_index + 1,
                 });
-                self.pieces.insert(piece_index + 2, offcut_piece);
             }
             EOF => self.pieces.push(new_piece),
         }
@@ -209,44 +172,20 @@ impl PieceTable {
                     self.pieces.remove(piece_index);
                     None
                 } else {
-                    let new_piece = Piece::new(
-                        original_piece.buffer,
-                        original_piece.start + 1,
-                        original_piece.length - 1,
-                        self,
-                    );
-                    self.pieces[piece_index] = new_piece;
+                    self.pieces[piece_index] = original_piece.truncate_left(1);
 
                     Some(piece_index)
                 }
             }
             PieceBody(piece_index, piece_offset) => {
-                let original_piece = &self.pieces[piece_index];
-                let new_piece = Piece::new(
-                    original_piece.buffer,
-                    original_piece.start + piece_offset + 1,
-                    original_piece.length - piece_offset - 1,
-                    self,
-                );
-                self.pieces[piece_index] = Piece::new(
-                    original_piece.buffer,
-                    original_piece.start,
-                    piece_offset,
-                    self,
-                );
-                self.pieces.insert(piece_index + 1, new_piece);
+                let (left, right) = self.pieces[piece_index].split_at(piece_offset);
+                self.pieces[piece_index] = left;
+                self.pieces.insert(piece_index + 1, right.truncate_left(1));
 
                 Some(piece_index)
             }
             PieceTail(piece_index) => {
-                let original_piece = &mut self.pieces[piece_index];
-                self.pieces[piece_index] = Piece::new(
-                    original_piece.buffer,
-                    original_piece.start,
-                    original_piece.length - 1,
-                    self,
-                );
-
+                self.pieces[piece_index] = self.pieces[piece_index].truncate_right(1);
                 Some(piece_index)
             }
             EOF => panic!("Attempted to remove from EOF"),
@@ -278,8 +217,7 @@ impl TextBuffer for PieceTable {
 
         match self.last_insert {
             Some(ChangeRecord { index, piece_index }) if at_index == index + 1 => {
-                let last_insert_piece = &mut self.pieces[piece_index];
-                last_insert_piece.length += items.len();
+                self.pieces[piece_index] = self.pieces[piece_index].extend(items);
                 self.last_insert = Some(ChangeRecord {
                     index: at_index + items.len(),
                     piece_index,
@@ -355,7 +293,6 @@ impl TextBuffer for PieceTable {
         Line::new(line_start_index, content)
     }
 
-    // TODO: Support different line endings
     fn line_count(&self) -> usize {
         self.pieces
             .iter()
@@ -387,14 +324,7 @@ impl TextBuffer for PieceTable {
                         }
                     }
                 } else {
-                    let new_piece = Piece::new(
-                        original_piece.buffer,
-                        original_piece.start,
-                        original_piece.length - 1,
-                        self,
-                    );
-                    self.pieces[piece_index] = new_piece;
-
+                    self.pieces[piece_index] = self.pieces[piece_index].truncate_right(1);
                     self.last_remove = Some(ChangeRecord {
                         index: at_index - 1,
                         piece_index,
@@ -445,8 +375,8 @@ impl<'a> Iterator for PieceTableIter<'a> {
                 }
 
                 let buffer = match current_piece.buffer {
-                    Original => &self.inner.original,
-                    Added => &self.inner.added
+                    Buffer::Original => &self.inner.original,
+                    Buffer::Added => &self.inner.added
                 };
 
                 let character = buffer[current_piece.start + self.current_piece_offset..]
@@ -464,15 +394,6 @@ impl<'a> Iterator for PieceTableIter<'a> {
     }
 }
 
-fn line_break_offsets(s: &str) -> Vec<usize> {
-    s.char_indices()
-        .filter_map(|(i, c)| match c {
-            '\n' => Some(i),
-            _ => None,
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -485,7 +406,6 @@ mod tests {
         pt.insert_item_at('1', 5);
         pt.insert_item_at('2', 6);
 
-        let a =pt.iter().collect::<Vec<char>>();
         assert_eq!(
             pt.iter().collect::<Vec<char>>(),
             vec!['a', 'b', 'c', 'd', '0', '1', '2']
@@ -668,16 +588,6 @@ mod tests {
         let pt = &mut PieceTable::new(String::from("abcd\nef\nhi"));
         pt.insert_items_at("\njk", 20);
         assert_eq!(vec!['e', 'f'], pt.line_at(1).characters);
-    }
-
-    fn line_break_offsets_correct() {
-        let mut line = String::from("");
-        let mut offsets = line_break_offsets(&line);
-        assert_eq!(vec![0usize; 0], offsets);
-
-        line = String::from("abc\ndef\nghijk\nl");
-        offsets = line_break_offsets(&line);
-        assert_eq!(vec![3, 7, 13], offsets);
     }
 
     #[test]

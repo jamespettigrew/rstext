@@ -1,4 +1,5 @@
 pub mod line;
+pub mod piece;
 pub mod piece_table;
 
 use line::Line;
