@@ -216,7 +216,7 @@ impl TextBuffer for PieceTable {
         self.last_remove = None;
 
         match self.last_insert {
-            Some(ChangeRecord { index, piece_index }) if at_index == index + 1 => {
+            Some(ChangeRecord { index, piece_index }) if at_index == index => {
                 self.pieces[piece_index] = self.pieces[piece_index].extend(items);
                 self.last_insert = Some(ChangeRecord {
                     index: at_index + items.len(),
@@ -402,13 +402,13 @@ mod tests {
     fn cached_insertion() {
         let pt = &mut PieceTable::new(String::from("abcd"));
 
-        pt.insert_item_at('0', 4);
-        pt.insert_item_at('1', 5);
+        pt.insert_item_at('0', 3);
+        pt.insert_item_at('1', 4);
         pt.insert_item_at('2', 6);
 
         assert_eq!(
             pt.iter().collect::<Vec<char>>(),
-            vec!['a', 'b', 'c', 'd', '0', '1', '2']
+            vec!['a', 'b', 'c', '0', '1', 'd', '2']
         );
     }
 
