@@ -28,8 +28,8 @@ pub struct PieceTable {
 }
 
 impl PieceTable {
-    pub fn new(content: String) -> PieceTable {
-        let mut piece_table = PieceTable {
+    pub fn new(content: String) -> Self {
+        let mut pt = Self {
             length: content.len(),
             pieces: Vec::new(),
             original: content,
@@ -37,9 +37,11 @@ impl PieceTable {
             last_insert: None,
             last_remove: None,
         };
-        piece_table.pieces = vec![piece_table.create_piece(Buffer::Original, 0, piece_table.length)];
+        if !pt.original.is_empty() {
+            pt.pieces.push(pt.create_piece(Buffer::Original, 0, pt.length));
+        }
 
-        piece_table
+        pt
     }
 
     fn create_piece(&self, buffer: Buffer, start: usize, length: usize) -> Piece {
