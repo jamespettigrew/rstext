@@ -1,19 +1,17 @@
 pub struct Line {
     pub start_index: usize,
-    pub characters: Vec<char>,
+    pub content: String,
 }
 
 impl Line {
-    pub fn new(start_index: usize, characters: Vec<char>) -> Line {
-        let string: String = characters.iter().collect();
-
+    pub fn new(start_index: usize, content: String) -> Line {
         Line {
             start_index,
-            characters,
+            content,
         }
     }
 
     pub fn len(&self) -> usize {
-        self.characters.len()
+        self.content.len()
     }
 }

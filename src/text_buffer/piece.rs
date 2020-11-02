@@ -1,3 +1,5 @@
+use crate::str_utils;
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Buffer {
     Added,
@@ -18,7 +20,7 @@ pub struct Piece {
 
 impl Piece {
     pub fn extend(&self, s: &str) -> Piece {
-        let s_line_break_offsets = line_break_offsets(s)
+        let s_line_break_offsets = str_utils::line_break_offsets(s)
             .iter()
             .map(|x| x + self.length)
             .collect::<Vec<usize>>();
@@ -37,30 +39,30 @@ impl Piece {
         }
     }
 
-    pub fn split_at(&self, idx: usize) -> (Self, Self) {
+    pub fn split_at(&self, offset: usize) -> (Self, Self) {
         let left_line_break_offsets = self
             .line_break_offsets
             .iter()
             .map(|x| *x)
-            .take_while(|x| *x < idx)
+            .take_while(|x| *x < offset)
             .collect::<Vec<usize>>();
         let right_line_break_offsets = self
             .line_break_offsets[left_line_break_offsets.len()..]
             .iter()
-            .map(|x| x.checked_sub(idx))
+            .map(|x| x.checked_sub(offset))
             .filter_map(|x| x)
             .collect::<Vec<usize>>();
 
         let left = Self {
             buffer: self.buffer,
             start: self.start,
-            length: idx,
+            length: offset,
             line_break_offsets: left_line_break_offsets
         };
         let right = Self {
             buffer: self.buffer,
-            start: self.start + idx,
-            length: self.length - idx,
+            start: self.start + offset,
+            length: self.length - offset,
             line_break_offsets: right_line_break_offsets
         };
 
@@ -100,16 +102,6 @@ impl Piece {
     }
 }
 
-pub fn line_break_offsets(s: &str) -> Vec<usize> {
-    s.bytes()
-        .enumerate()
-        .filter_map(|(i, b)| match b {
-            0x0A => Some(i),
-            _ => None,
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,17 +125,6 @@ mod tests {
             line_break_offsets: vec![2, 5, 11]
         };
         assert_eq!(expected, original.extend("a\nb"));
-    }
-
-    #[test]
-    fn line_break_offsets_correct() {
-        let mut line = String::from("");
-        let mut offsets = line_break_offsets(&line);
-        assert_eq!(vec![0usize; 0], offsets);
-
-        line = String::from("abc\ndef\nghijk\nl");
-        offsets = line_break_offsets(&line);
-        assert_eq!(vec![3, 7, 13], offsets);
     }
 
     #[test]

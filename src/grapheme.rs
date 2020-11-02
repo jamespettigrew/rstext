@@ -107,8 +107,8 @@ impl Grapheme {
 
     pub fn from_line(line: &Line, tab_width: u8) -> Vec<Grapheme> {
         let mut graphemes = vec![];
-        for ch in line.characters.iter() {
-            graphemes.push(Grapheme::from(*ch, tab_width));
+        for ch in line.content.chars() {
+            graphemes.push(Grapheme::from(ch, tab_width));
         }
 
         graphemes

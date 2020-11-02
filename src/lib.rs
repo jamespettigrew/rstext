@@ -4,5 +4,6 @@ pub mod editor;
 pub mod file;
 pub mod grapheme;
 pub mod renderer;
+pub mod str_utils;
 pub mod text_buffer;
 pub mod window;

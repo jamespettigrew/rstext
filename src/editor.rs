@@ -1,5 +1,5 @@
-use crate::config::{EditorConfig, IndentationPreference};
-use crate::cursor::{Cursor, CursorMove, HorizontalMove, VerticalMove};
+use crate::{config::{EditorConfig, IndentationPreference}, str_utils};
+use crate::cursor::Cursor;
 use crate::file;
 use crate::renderer;
 use crate::text_buffer::piece_table::PieceTable;
@@ -62,7 +62,7 @@ impl<'a> Editor<'a> {
                 &mut self.text_buffer,
                 &mut self.cursor,
                 &mut self.window,
-                &self.config
+                &self.config,
             );
 
             if let Ok(Event::Key(event)) = event::read() {
@@ -109,99 +109,92 @@ impl<'a> Editor<'a> {
     }
 
     fn cursor_backward(&mut self) {
-        if self.cursor.character > 0 {
-            self.cursor.moved(CursorMove {
-                vertical: None,
-                horizontal: Some(HorizontalMove::Left(1)),
-            });
-        } else if self.cursor.line > 0 {
-            let line_above = self.text_buffer.line_at(self.cursor.line - 1);
-            let column_delta =
-                (line_above.characters.len() as isize) - (self.cursor.character as isize);
-            let cursor_move = CursorMove {
-                vertical: Some(VerticalMove::Up(1)),
-                horizontal: HorizontalMove::from_delta(column_delta),
-            };
-            self.cursor.moved(cursor_move);
+        let current_line = self.text_buffer.line_at(self.cursor.line);
+        let previous_char_idx = str_utils::prev_char_idx(&current_line.content, self.cursor.byte_offset);
+        match previous_char_idx {
+            Some(i) => {
+                self.cursor.byte_offset = i;
+                self.cursor.character -= 1;
+            }
+            None => {
+                if self.cursor.line > 0 {
+                    let line_above = self.text_buffer.line_at(self.cursor.line - 1);
+                    self.cursor.byte_offset = line_above.content.len();
+                    self.cursor.character = line_above.content.chars().count();
+                    self.cursor.line -= 1;
+                }
+            }
         }
     }
 
     fn cursor_down(&mut self) {
         if self.cursor.line < self.text_buffer.line_count() - 1 {
             let line_below = self.text_buffer.line_at(self.cursor.line + 1);
-            let mut column_delta = 0;
-            if line_below.characters.len() == 0
-                || (line_below.characters.len() - 1) < self.cursor.character
+            if line_below.len() < self.cursor.byte_offset
             {
-                column_delta =
-                    (line_below.characters.len() as isize) - (self.cursor.character as isize)
+                self.cursor.byte_offset = line_below.len();
+                self.cursor.character = line_below.content.chars().count();
             }
-
-            let cursor_move = CursorMove {
-                vertical: Some(VerticalMove::Down(1)),
-                horizontal: HorizontalMove::from_delta(column_delta),
-            };
-            self.cursor.moved(cursor_move);
+            self.cursor.line += 1;
         }
     }
 
     fn cursor_forward(&mut self) {
         let current_line = self.text_buffer.line_at(self.cursor.line);
-        if self.cursor.character < current_line.characters.len() {
-            self.cursor.moved(CursorMove {
-                vertical: None,
-                horizontal: Some(HorizontalMove::Right(1)),
-            });
-        } else if self.cursor.line < self.text_buffer.line_count() - 1 {
-            let column_delta = 0 - (self.cursor.character as isize);
-            let cursor_move = CursorMove {
-                vertical: Some(VerticalMove::Down(1)),
-                horizontal: HorizontalMove::from_delta(column_delta),
-            };
-            self.cursor.moved(cursor_move);
+
+        let next_char_idx = str_utils::next_char_idx(&current_line.content, self.cursor.byte_offset);
+        match next_char_idx {
+            Some(i) => {
+                self.cursor.byte_offset = i;
+                self.cursor.character += 1;
+            }
+            None => {
+                if self.cursor.byte_offset < current_line.len() {
+                    self.cursor.byte_offset = current_line.len();
+                    self.cursor.character += 1;
+                } else if self.cursor.line < self.text_buffer.line_count() - 1 {
+                    self.cursor.byte_offset = 0;
+                    self.cursor.character = 0;
+                    self.cursor.line += 1;
+                }
+            }
         }
     }
 
     fn cursor_up(&mut self) {
         if self.cursor.line > 0 {
             let line_above = self.text_buffer.line_at(self.cursor.line - 1);
-            let mut column_delta = 0;
-            if line_above.characters.len() == 0
-                || (line_above.characters.len() - 1) < self.cursor.character
+            if line_above.len() < self.cursor.byte_offset
             {
-                column_delta =
-                    (line_above.characters.len() as isize) - (self.cursor.character as isize)
+                self.cursor.byte_offset = line_above.len();
+                self.cursor.character = line_above.content.chars().count();
             }
-
-            let cursor_move = CursorMove {
-                vertical: Some(VerticalMove::Up(1)),
-                horizontal: HorizontalMove::from_delta(column_delta),
-            };
-            self.cursor.moved(cursor_move);
+            self.cursor.line -= 1;
         }
     }
 
     fn delete_backward(&mut self) {
-        if self.cursor.character == 0 && self.cursor.line > 0 {
-            let line_above = self.text_buffer.line_at(self.cursor.line - 1);
-            let new_cursor_column = line_above.characters.len();
-            self.text_buffer
-                .remove_item_at(line_above.start_index + new_cursor_column);
-
-            let column_delta = (new_cursor_column as isize) - (self.cursor.character as isize);
-            let cursor_move = CursorMove {
-                vertical: Some(VerticalMove::Up(1)),
-                horizontal: HorizontalMove::from_delta(column_delta),
-            };
-            self.cursor.moved(cursor_move);
-        } else if self.cursor.character > 0 {
+        if self.cursor.byte_offset > 0 {
             let current_line = self.text_buffer.line_at(self.cursor.line);
-            self.cursor.moved(CursorMove {
-                vertical: None,
-                horizontal: Some(HorizontalMove::Left(1)),
-            });
-            self.text_buffer
-                .remove_item_at(current_line.start_index + self.cursor.character);
+            let prev_char_idx = str_utils::prev_char_idx(&current_line.content, self.cursor.byte_offset);
+            match prev_char_idx {
+                Some(i) => {
+                    self.text_buffer.remove_items(current_line.start_index + i..current_line.start_index + self.cursor.byte_offset);
+                    self.cursor.byte_offset = i;
+                    self.cursor.character -= 1;
+                },
+                None => {
+                    self.text_buffer.remove_items(current_line.start_index..current_line.start_index + self.cursor.byte_offset);
+                    self.cursor.byte_offset = 0;
+                    self.cursor.character = 0;
+                }
+            }
+        } else if self.cursor.line > 0 {
+            let line_above = self.text_buffer.line_at(self.cursor.line - 1);
+            self.text_buffer.remove_item_at(line_above.start_index + line_above.len());
+            self.cursor.byte_offset = line_above.len();
+            self.cursor.character = line_above.content.chars().count();
+            self.cursor.line -= 1;
         }
     }
 
@@ -211,26 +204,17 @@ impl<'a> Editor<'a> {
 
     fn insert_character(&mut self, c: char) {
         let current_line = self.text_buffer.line_at(self.cursor.line);
-        self.text_buffer
-            .insert_item_at(c, current_line.start_index + self.cursor.character);
-        let cursor_move = CursorMove {
-            vertical: None,
-            horizontal: Some(HorizontalMove::Right(1)),
-        };
-        self.cursor.moved(cursor_move);
+        self.text_buffer.insert_item_at(c, current_line.start_index + self.cursor.byte_offset);
+        self.cursor.byte_offset += c.len_utf8();
+        self.cursor.character += 1;
     }
 
     fn insert_newline(&mut self) {
         let current_line = self.text_buffer.line_at(self.cursor.line);
-        self.text_buffer
-            .insert_item_at('\n', current_line.start_index + self.cursor.character);
-
-        let column_delta = 0 - (self.cursor.character as isize);
-        let cursor_move = CursorMove {
-            vertical: Some(VerticalMove::Down(1)),
-            horizontal: HorizontalMove::from_delta(column_delta),
-        };
-        self.cursor.moved(cursor_move);
+        self.text_buffer.insert_item_at('\n', current_line.start_index + self.cursor.byte_offset);
+        self.cursor.byte_offset = 0;
+        self.cursor.character = 0;
+        self.cursor.line += 1;
     }
 
     fn insert_tab(&mut self) {
@@ -240,13 +224,10 @@ impl<'a> Editor<'a> {
             IndentationPreference::Spaces => vec![' '; self.config.tab_width as usize].into_iter().collect()
         };
 
-        let cursor_move = CursorMove {
-            vertical: None,
-            horizontal: Some(HorizontalMove::Right(to_insert.len())),
-        };
         self.text_buffer
             .insert_items_at(&to_insert, current_line.start_index + self.cursor.character);
-        self.cursor.moved(cursor_move);
+        self.cursor.byte_offset += to_insert.len();
+        self.cursor.character += to_insert.chars().count();
     }
 
     fn save(&mut self) {

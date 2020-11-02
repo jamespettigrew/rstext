@@ -1,5 +1,6 @@
+use crate::str_utils;
 use crate::text_buffer::{Line, TextBuffer};
-use crate::text_buffer::piece::{ line_break_offsets, Buffer, Piece};
+use crate::text_buffer::piece::{ Buffer, Piece};
 use std::iter::Iterator;
 use std::ops::{Index, Range};
 
@@ -46,7 +47,8 @@ impl PieceTable {
             Buffer::Added => &self.added,
             Buffer::Original => &self.original,
         };
-        let line_break_offsets = line_break_offsets(&buffer_contents[start..start + length]);
+        let piece_contents = &buffer_contents[start..start + length];
+        let line_break_offsets = str_utils::line_break_offsets(piece_contents);
 
         let piece = Piece {
             buffer,
@@ -158,7 +160,13 @@ impl PieceTable {
                     piece_index: piece_index + 1,
                 });
             }
-            EOF => self.pieces.push(new_piece),
+            EOF => {
+                self.pieces.push(new_piece);
+                self.last_insert = Some(ChangeRecord {
+                    index: index + items.len(),
+                    piece_index: self.pieces.len() - 1,
+                });
+            },
         }
     }
 
@@ -170,18 +178,16 @@ impl PieceTable {
 
                 if original_piece.length <= 1 {
                     self.pieces.remove(piece_index);
-                    None
+                    piece_index.checked_sub(1)
                 } else {
                     self.pieces[piece_index] = original_piece.truncate_left(1);
-
-                    Some(piece_index)
+                    None
                 }
             }
             PieceBody(piece_index, piece_offset) => {
                 let (left, right) = self.pieces[piece_index].split_at(piece_offset);
                 self.pieces[piece_index] = left;
                 self.pieces.insert(piece_index + 1, right.truncate_left(1));
-
                 Some(piece_index)
             }
             PieceTail(piece_index) => {
@@ -191,15 +197,12 @@ impl PieceTable {
             EOF => panic!("Attempted to remove from EOF"),
         };
 
-        self.last_remove = match cached_piece_index {
-            Some(cached_piece_index) => Some(ChangeRecord {
-                index: at_index,
-                piece_index: cached_piece_index,
-            }),
-            None => None,
-        };
-
-        self.length = self.length.checked_sub(1).unwrap_or(0);
+        self.last_remove = cached_piece_index.map(|i| {
+            ChangeRecord {
+                index: at_index.checked_sub(1).unwrap_or(0),
+                piece_index: i,
+            }
+        });
     }
 }
 
@@ -288,7 +291,7 @@ impl TextBuffer for PieceTable {
 
         let content = self
             .iter_range(line_start_index..line_end_index.unwrap_or(self.length))
-            .collect::<Vec<char>>();
+            .collect::<String>();
 
         Line::new(line_start_index, content)
     }
@@ -303,38 +306,27 @@ impl TextBuffer for PieceTable {
         self.last_insert = None;
 
         match self.last_remove {
-            Some(ChangeRecord { index, piece_index }) if index == at_index - 1 => {
-                let original_piece = &self.pieces[piece_index];
-
-                if original_piece.length <= 1 {
+            Some(ChangeRecord { index, piece_index }) if index == at_index => {
+                if self.pieces[piece_index].length <= 1 {
                     self.pieces.remove(piece_index);
-                    match piece_index.checked_sub(1) {
-                        Some(new_piece_index) => {
-                            self.last_remove = if self.pieces.len() > new_piece_index {
-                                Some(ChangeRecord {
-                                    index: at_index - 1,
-                                    piece_index: new_piece_index - 1,
-                                })
-                            } else {
-                                None
-                            }
+                    self.last_remove = piece_index.checked_sub(1).map(|i| {
+                        ChangeRecord {
+                            index: at_index.checked_sub(1).unwrap_or(0),
+                            piece_index: i,
                         }
-                        None => {
-                            self.last_remove = None;
-                        }
-                    }
+                    });
                 } else {
                     self.pieces[piece_index] = self.pieces[piece_index].truncate_right(1);
                     self.last_remove = Some(ChangeRecord {
-                        index: at_index - 1,
+                        index: at_index.checked_sub(1).unwrap_or(0),
                         piece_index,
                     });
                 }
             }
-            _ => {
-                self.raw_remove_item_at(at_index);
-            }
+            _ => self.raw_remove_item_at(at_index)
         }
+
+        self.length = self.length.checked_sub(1).unwrap_or(0);
     }
 
     fn remove_items(&mut self, range: Range<usize>) {
@@ -406,10 +398,7 @@ mod tests {
         pt.insert_item_at('1', 4);
         pt.insert_item_at('2', 6);
 
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['a', 'b', 'c', '0', '1', 'd', '2']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "abc01d2");
     }
 
     #[test]
@@ -417,56 +406,33 @@ mod tests {
         let pt = &mut PieceTable::new(String::from("abcd"));
 
         pt.insert_item_at('0', 0);
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['0', 'a', 'b', 'c', 'd']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "0abcd");
 
         pt.insert_item_at('1', 1);
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['0', '1', 'a', 'b', 'c', 'd']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "01abcd");
 
         pt.insert_item_at('2', 0);
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['2', '0', '1', 'a', 'b', 'c', 'd']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "201abcd");
     }
 
     #[test]
     fn insert_body() {
         let pt = &mut PieceTable::new(String::from("abcd"));
         pt.insert_items_at("012", 2);
-
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['a', 'b', '0', '1', '2', 'c', 'd']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "ab012cd");
 
         pt.insert_item_at('3', 4);
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['a', 'b', '0', '1', '3', '2', 'c', 'd']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "ab0132cd");
     }
 
     #[test]
     fn insert_end() {
         let pt = &mut PieceTable::new(String::from("abcd"));
         pt.insert_items_at("012", 4);
-
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['a', 'b', 'c', 'd', '0', '1', '2']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "abcd012");
 
         pt.insert_item_at('3', 7);
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['a', 'b', 'c', 'd', '0', '1', '2', '3']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "abcd0123");
     }
 
     #[test]
@@ -500,10 +466,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['a', 'b', '0', '1', '2', 'c', 'd', '3']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "ab012cd3");
     }
 
     #[test]
@@ -537,57 +500,48 @@ mod tests {
             },
         ];
 
-        // vec!['a', 'b', '0', '1', '2', 'c', 'd', '3']
-        assert_eq!(
-            pt.iter_range(1..4).collect::<Vec<char>>(),
-            vec!['b', '0', '1']
-        );
-        assert_eq!(
-            pt.iter_range(0..5).collect::<Vec<char>>(),
-            vec!['a', 'b', '0', '1', '2']
-        );
-        assert_eq!(
-            pt.iter_range(4..23).collect::<Vec<char>>(),
-            vec!['2', 'c', 'd', '3']
-        );
+        // ab012cd3
+        assert_eq!(pt.iter_range(1..4).collect::<String>(), "b01");
+        assert_eq!(pt.iter_range(0..5).collect::<String>(), "ab012");
+        assert_eq!(pt.iter_range(4..23).collect::<String>(), "2cd3");
     }
 
     #[test]
     fn line_at() {
         let pt = &mut PieceTable::new(String::from("ab"));
-        assert_eq!(vec!['a', 'b'], pt.line_at(0).characters);
+        assert_eq!("ab", pt.line_at(0).content);
         pt.insert_items_at("\nd0\n234567\n89", 4);
-        assert_eq!(vec!['d', '0'], pt.line_at(1).characters);
-        assert_eq!(vec!['2', '3', '4', '5', '6', '7'], pt.line_at(2).characters);
-        assert_eq!(vec!['8', '9'], pt.line_at(3).characters);
+        assert_eq!("d0", pt.line_at(1).content);
+        assert_eq!("234567", pt.line_at(2).content);
+        assert_eq!("89", pt.line_at(3).content);
 
         pt.insert_item_at('\n', 14);
-        assert_eq!(vec!['8'], pt.line_at(3).characters);
+        assert_eq!("8", pt.line_at(3).content);
 
         let pt = &mut PieceTable::new(String::from("abcd"));
         pt.insert_item_at('\n', 2);
-        assert_eq!(vec!['a', 'b'], pt.line_at(0).characters);
-        assert_eq!(vec!['c', 'd'], pt.line_at(1).characters);
+        assert_eq!("ab", pt.line_at(0).content);
+        assert_eq!("cd", pt.line_at(1).content);
         pt.remove_item_at(2);
         pt.insert_item_at('\n', 2);
-        assert_eq!(vec!['a', 'b'], pt.line_at(0).characters);
-        assert_eq!(vec!['c', 'd'], pt.line_at(1).characters);
+        assert_eq!("ab", pt.line_at(0).content);
+        assert_eq!("cd", pt.line_at(1).content);
 
         let pt = &mut PieceTable::new(String::from("abcd"));
         pt.insert_item_at('\n', 2);
         pt.insert_item_at('c', 2);
         pt.insert_item_at('c', 3);
-        assert_eq!(vec!['a', 'b', 'c', 'c'], pt.line_at(0).characters);
-        assert_eq!(vec!['c', 'd'], pt.line_at(1).characters);
+        assert_eq!("abcc", pt.line_at(0).content);
+        assert_eq!("cd", pt.line_at(1).content);
 
         // Single piece with lines
         let pt = &mut PieceTable::new(String::from("abcd\nef"));
-        assert_eq!(vec!['a', 'b', 'c', 'd'], pt.line_at(0).characters);
+        assert_eq!("abcd", pt.line_at(0).content);
 
         // Line not at index 0 where multiple pieces and start of next line in same piece
         let pt = &mut PieceTable::new(String::from("abcd\nef\nhi"));
         pt.insert_items_at("\njk", 20);
-        assert_eq!(vec!['e', 'f'], pt.line_at(1).characters);
+        assert_eq!("ef", pt.line_at(1).content);
     }
 
     #[test]
@@ -631,13 +585,10 @@ mod tests {
         pt.length = pt.added.len() + pt.original.len();
 
         pt.remove_item_at(0);
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['b', '0', '1', '2', 'c', 'd', '3']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "b012cd3");
 
         pt.remove_items(0..3);
-        assert_eq!(pt.iter().collect::<Vec<char>>(), vec!['2', 'c', 'd', '3']);
+        assert_eq!(pt.iter().collect::<String>(), "2cd3");
     }
 
     #[test]
@@ -673,13 +624,10 @@ mod tests {
         pt.length = pt.added.len() + pt.original.len();
 
         pt.remove_item_at(3);
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['a', 'b', '0', '2', 'c', 'd', '3']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "ab02cd3");
 
         pt.remove_items(1..6);
-        assert_eq!(pt.iter().collect::<Vec<char>>(), vec!['a', '3']);
+        assert_eq!(pt.iter().collect::<String>(), "a3");
     }
 
     #[test]
@@ -715,10 +663,7 @@ mod tests {
         pt.length = pt.added.len() + pt.original.len();
 
         pt.remove_item_at(1);
-        assert_eq!(
-            pt.iter().collect::<Vec<char>>(),
-            vec!['a', '0', '1', '2', 'c', 'd', '3']
-        );
+        assert_eq!(pt.iter().collect::<String>(), "a012cd3");
 
         // Remove linebreak from tail
         let pt = &mut PieceTable::new(String::from("abcd\n"));
@@ -752,9 +697,6 @@ mod tests {
         pt.length = pt.added.len() + pt.original.len();
 
         pt.remove_item_at(7);
-        assert_eq!(
-            pt.line_at(0).characters,
-            vec!['a', 'b', '0', '1', '2', 'c', 'd', '3']
-        );
+        assert_eq!(pt.line_at(0).content, "ab012cd3");
     }
 }
