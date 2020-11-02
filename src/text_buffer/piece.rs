@@ -88,7 +88,7 @@ impl Piece {
             .line_break_offsets
             .iter()
             .map(|x| *x)
-            .take_while(|x| *x <= self.length - len)
+            .take_while(|x| *x < self.length - len)
             .collect::<Vec<usize>>();
 
         Self {
@@ -187,7 +187,6 @@ mod tests {
             length: 10,
             line_break_offsets: vec![2, 5]
         };
-
         let expected = Piece
         {
             buffer: Buffer::Original,
@@ -208,14 +207,13 @@ mod tests {
             length: 10,
             line_break_offsets: vec![2, 5, 8]
         };
-
         let expected = Piece
         {
             buffer: Buffer::Original,
             start: 3,
-            length: 7,
+            length: 8,
             line_break_offsets: vec![2, 5]
         };
-        assert_eq!(expected, original.truncate_right(3));
+        assert_eq!(expected, original.truncate_right(2));
     }
 }
