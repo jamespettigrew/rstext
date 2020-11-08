@@ -62,7 +62,7 @@ impl PieceTable {
         piece
     }
 
-    fn iter<'a>(&'a self) -> PieceTableIter<'a> {
+    fn iter(&self) -> PieceTableIter {
         PieceTableIter {
             inner: self,
             current_piece_index: 0,
@@ -72,7 +72,7 @@ impl PieceTable {
         }
     }
 
-    fn iter_range<'a>(&'a self, range: Range<usize>) -> PieceTableIter<'a> {
+    fn iter_range(&self, range: Range<usize>) -> PieceTableIter {
         if self.length == 0 || range.start >= range.end {
             return PieceTableIter {
                 inner: self,
