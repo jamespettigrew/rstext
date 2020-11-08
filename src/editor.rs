@@ -73,9 +73,6 @@ impl Editor {
                 }
             }
         }
-
-        execute!(self.screen, LeaveAlternateScreen);
-        terminal::disable_raw_mode();
     }
 
     fn execute_command(&mut self, command: Command) {
@@ -235,6 +232,13 @@ impl Editor {
         if let Some(path) = &self.file_path {
             file::save(path, self.text_buffer.all_content());
         }
+    }
+}
+
+impl Drop for Editor {
+    fn drop(&mut self) {
+        execute!(self.screen, LeaveAlternateScreen);
+        terminal::disable_raw_mode();
     }
 }
 
