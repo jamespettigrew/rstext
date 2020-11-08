@@ -1,8 +1,9 @@
 use std::fs::File;
 use std::io;
 use std::io::prelude::{Read, Write};
+use std::path::Path;
 
-pub fn load(path: &str) -> io::Result<String> {
+pub fn load(path: &Path) -> io::Result<String> {
     let file_contents = match File::open(path) {
         Ok(mut f) => {
             let mut contents = String::new();
@@ -15,7 +16,7 @@ pub fn load(path: &str) -> io::Result<String> {
     Ok(file_contents)
 }
 
-pub fn save(path: &str, content: String) -> io::Result<()> {
+pub fn save(path: &Path, content: String) -> io::Result<()> {
     let file = &mut File::create(path)?;
     Ok(for c in content.chars() {
         let buf = &mut [0u8; 4];

@@ -6,6 +6,7 @@ use crate::text_buffer::piece_table::PieceTable;
 use crate::text_buffer::TextBuffer;
 use crate::window::Window;
 use std::io::{stdout, Stdout, Write};
+use std::path::PathBuf;
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -14,20 +15,20 @@ use crossterm::{
     Result,
 };
 
-pub struct Editor<'a> {
+pub struct Editor {
     config: EditorConfig,
     cursor: Cursor,
-    file_path: Option<&'a str>,
+    file_path: Option<PathBuf>,
     running: bool,
     screen: Stdout,
     text_buffer: PieceTable,
     window: Window,
 }
 
-impl<'a> Editor<'a> {
-    pub fn new(file_path: Option<&'a str>) -> Editor<'a> {
-        let file_contents = match file_path {
-            Some(path) => file::load(path).unwrap_or(String::new()),
+impl Editor {
+    pub fn new(file_path: Option<PathBuf>) -> Self {
+        let file_contents = match &file_path {
+            Some(path) => file::load(&path).unwrap_or(String::new()),
             _ => String::new(),
         };
 
@@ -39,7 +40,7 @@ impl<'a> Editor<'a> {
         let cursor = Cursor::new();
         let window = Window::new(0, 0, 0, 0);
 
-        Editor {
+        Self {
             config,
             cursor,
             file_path,
@@ -231,7 +232,7 @@ impl<'a> Editor<'a> {
     }
 
     fn save(&mut self) {
-        if let Some(path) = self.file_path {
+        if let Some(path) = &self.file_path {
             file::save(path, self.text_buffer.all_content());
         }
     }
