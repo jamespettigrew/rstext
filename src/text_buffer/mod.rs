@@ -6,11 +6,9 @@ use line::Line;
 use std::ops::Range;
 
 pub trait TextBuffer {
-    fn insert_item_at(&mut self, item: char, index: usize);
-    fn insert_items_at(&mut self, items: &str, index: usize);
+    fn insert(&mut self, s: &str, offset: usize);
     fn all_content(&self) -> String;
-    fn line_at(&self, row: usize) -> Line;
+    fn line_at(&self, idx: usize) -> Line;
     fn line_count(&self) -> usize;
-    fn remove_item_at(&mut self, index: usize);
-    fn remove_items(&mut self, range: Range<usize>);
+    fn remove(&mut self, range: Range<usize>);
 }

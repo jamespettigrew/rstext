@@ -4,17 +4,14 @@ use crate::text_buffer::piece::{ Buffer, Piece};
 use std::iter::Iterator;
 use std::ops::{Index, Range};
 
-use IndexLocation::*;
-
-enum IndexLocation {
-    PieceHead(usize),
-    PieceBody(usize, usize),
-    PieceTail(usize),
+enum PiecePosition {
+    Head(usize),
+    Body(usize, usize),
     EOF,
 }
 
 struct ChangeRecord {
-    index: usize,
+    offset: usize,
     piece_index: usize,
 }
 
@@ -83,21 +80,19 @@ impl PieceTable {
             };
         }
 
-        let start_location = self.index_location(range.start);
-        let end_location = self.index_location(range.end.checked_sub(1).unwrap_or(0));
+        let start_location = self.offset_to_piece_position(range.start);
+        let end_location = self.offset_to_piece_position(range.end.checked_sub(1).unwrap_or(0));
 
         let (start_piece_index, start_piece_offset) = match start_location {
-            PieceHead(piece_index) => (piece_index, 0),
-            PieceBody(piece_index, piece_offset) => (piece_index, piece_offset),
-            PieceTail(piece_index) => (piece_index, self.pieces[piece_index].length - 1),
-            EOF => panic!("Start index out of range"),
+            PiecePosition::Head(piece_index) => (piece_index, 0),
+            PiecePosition::Body(piece_index, piece_offset) => (piece_index, piece_offset),
+            PiecePosition::EOF => panic!("Start index out of range"),
         };
 
         let (end_piece_index, end_piece_offset) = match end_location {
-            PieceHead(piece_index) => (piece_index, 1),
-            PieceBody(piece_index, piece_offset) => (piece_index, piece_offset + 1),
-            PieceTail(piece_index) => (piece_index + 1, 0),
-            EOF => (self.pieces.len(), 0),
+            PiecePosition::Head(piece_index) => (piece_index, 1),
+            PiecePosition::Body(piece_index, piece_offset) => (piece_index, piece_offset + 1),
+            PiecePosition::EOF => (self.pieces.len(), 0),
         };
 
         PieceTableIter {
@@ -109,73 +104,61 @@ impl PieceTable {
         }
     }
 
-    fn index_location(&self, index: usize) -> IndexLocation {
+    fn offset_to_piece_position(&self, offset: usize) -> PiecePosition {
         let mut item_count = 0usize;
         for (piece_index, piece) in self.pieces.iter().enumerate() {
-            if index >= item_count && index < item_count + piece.length {
-                return match index {
-                    index if index == item_count => PieceHead(piece_index),
-                    index if index == item_count + piece.length - 1 => PieceTail(piece_index),
-                    _ => PieceBody(piece_index, index - item_count),
+            if offset >= item_count && offset < item_count + piece.length {
+                return match offset {
+                    offset if offset == item_count => PiecePosition::Head(piece_index),
+                    _ => PiecePosition::Body(piece_index, offset - item_count),
                 };
             }
             item_count += piece.length;
         }
 
-        EOF
+        PiecePosition::EOF
     }
 
-    fn raw_insert_items_at(&mut self, items: &str, index: usize) {
-        let location = self.index_location(index);
+    fn raw_insert(&mut self, s: &str, offset: usize) {
+        let location = self.offset_to_piece_position(offset);
         let new_piece = self.create_piece(
             Buffer::Added,
-            self.added.len() - items.len(),
-            items.len()
+            self.added.len() - s.len(),
+            s.len()
         );
 
         match location {
-            PieceHead(piece_index) => {
+            PiecePosition::Head(piece_index) => {
                 self.pieces.insert(piece_index, new_piece);
                 self.last_insert = Some(ChangeRecord {
-                    index: index + items.len(),
-                    piece_index: piece_index,
+                    offset: offset + s.len(),
+                    piece_index,
                 });
             }
-            PieceBody(piece_index, offset) => {
+            PiecePosition::Body(piece_index, offset) => {
                 let (left, right) = self.pieces[piece_index].split_at(offset);
                 self.pieces[piece_index] = left;
                 self.pieces.insert(piece_index + 1, new_piece);
                 self.pieces.insert(piece_index + 2, right);
                 self.last_insert = Some(ChangeRecord {
-                    index: index + items.len(),
+                    offset: offset + s.len(),
                     piece_index: piece_index + 1,
                 });
             }
-            PieceTail(piece_index) => {
-                let original_piece = &self.pieces[piece_index];
-                let (left, right) = self.pieces[piece_index].split_at(original_piece.length - 1);
-                self.pieces[piece_index] = left;
-                self.pieces.insert(piece_index + 1, new_piece);
-                self.pieces.insert(piece_index + 2, right);
-                self.last_insert = Some(ChangeRecord {
-                    index: index + items.len(),
-                    piece_index: piece_index + 1,
-                });
-            }
-            EOF => {
+            PiecePosition::EOF => {
                 self.pieces.push(new_piece);
                 self.last_insert = Some(ChangeRecord {
-                    index: index + items.len(),
+                    offset: offset + s.len(),
                     piece_index: self.pieces.len() - 1,
                 });
             },
         }
     }
 
-    fn raw_remove_item_at(&mut self, at_index: usize) {
-        let location = self.index_location(at_index);
+    fn raw_remove(&mut self, offset: usize) {
+        let location = self.offset_to_piece_position(offset);
         let cached_piece_index: Option<usize> = match location {
-            PieceHead(piece_index) => {
+            PiecePosition::Head(piece_index) => {
                 let original_piece = &self.pieces[piece_index];
 
                 if original_piece.length <= 1 {
@@ -186,22 +169,18 @@ impl PieceTable {
                     None
                 }
             }
-            PieceBody(piece_index, piece_offset) => {
+            PiecePosition::Body(piece_index, piece_offset) => {
                 let (left, right) = self.pieces[piece_index].split_at(piece_offset);
                 self.pieces[piece_index] = left;
                 self.pieces.insert(piece_index + 1, right.truncate_left(1));
                 Some(piece_index)
             }
-            PieceTail(piece_index) => {
-                self.pieces[piece_index] = self.pieces[piece_index].truncate_right(1);
-                Some(piece_index)
-            }
-            EOF => panic!("Attempted to remove from EOF"),
+            PiecePosition::EOF => panic!("Attempted to remove from EOF"),
         };
 
         self.last_remove = cached_piece_index.map(|i| {
             ChangeRecord {
-                index: at_index.checked_sub(1).unwrap_or(0),
+                offset: offset.checked_sub(1).unwrap_or(0),
                 piece_index: i,
             }
         });
@@ -209,27 +188,21 @@ impl PieceTable {
 }
 
 impl TextBuffer for PieceTable {
-    fn insert_item_at(&mut self, item: char, index: usize) {
-        let mut items = String::new();
-        items.push(item);
-        self.insert_items_at(items.as_ref(), index);
-    }
-
-    fn insert_items_at(&mut self, items: &str, at_index: usize) {
-        self.added.push_str(items);
-        self.length += items.len();
+    fn insert(&mut self, to_insert: &str, offset: usize) {
+        self.added.push_str(to_insert);
+        self.length += to_insert.len();
         self.last_remove = None;
 
         match self.last_insert {
-            Some(ChangeRecord { index, piece_index }) if at_index == index => {
-                self.pieces[piece_index] = self.pieces[piece_index].extend(items);
+            Some(ChangeRecord { offset: last_offset, piece_index }) if last_offset == offset => {
+                self.pieces[piece_index] = self.pieces[piece_index].extend(to_insert);
                 self.last_insert = Some(ChangeRecord {
-                    index: at_index + items.len(),
+                    offset: offset + to_insert.len(),
                     piece_index,
                 });
             }
             _ => {
-                self.raw_insert_items_at(items, at_index);
+                self.raw_insert(to_insert, offset);
             }
         }
     }
@@ -238,14 +211,13 @@ impl TextBuffer for PieceTable {
         self.iter().collect()
     }
 
-    // TODO: Support different line endings
-    fn line_at(&self, line_index: usize) -> Line {
+    fn line_at(&self, idx: usize) -> Line {
         let mut line_start_index = 0;
         let mut line_end_index = None;
         let mut item_count = 0;
         let mut line_start_piece_index = 0;
 
-        if line_index == 0 {
+        if idx == 0 {
             // Line starts at index 0, ends at first line break found
             for piece in self.pieces.iter() {
                 if !piece.line_break_offsets.is_empty() {
@@ -256,7 +228,7 @@ impl TextBuffer for PieceTable {
             }
         } else {
             // Find start index
-            let mut line_breaks_remaining = line_index;
+            let mut line_breaks_remaining = idx;
             for (piece_index, piece) in self.pieces.iter().enumerate() {
                 if line_breaks_remaining <= piece.line_break_offsets.len() {
                     // Line starts in this piece
@@ -304,41 +276,39 @@ impl TextBuffer for PieceTable {
             .fold(1, |count, piece| piece.line_break_offsets.len() + count)
     }
 
-    fn remove_item_at(&mut self, at_index: usize) {
-        self.last_insert = None;
-
-        match self.last_remove {
-            Some(ChangeRecord { index, piece_index }) if index == at_index => {
-                if self.pieces[piece_index].length <= 1 {
-                    self.pieces.remove(piece_index);
-                    self.last_remove = piece_index.checked_sub(1).map(|i| {
-                        ChangeRecord {
-                            index: at_index.checked_sub(1).unwrap_or(0),
-                            piece_index: i,
-                        }
-                    });
-                } else {
-                    self.pieces[piece_index] = self.pieces[piece_index].truncate_right(1);
-                    self.last_remove = Some(ChangeRecord {
-                        index: at_index.checked_sub(1).unwrap_or(0),
-                        piece_index,
-                    });
-                }
-            }
-            _ => self.raw_remove_item_at(at_index)
-        }
-
-        self.length = self.length.checked_sub(1).unwrap_or(0);
-    }
-
-    fn remove_items(&mut self, range: Range<usize>) {
+    fn remove(&mut self, range: Range<usize>) {
         if range.start >= range.end {
             return;
         }
 
-        for i in range.rev() {
-            self.remove_item_at(i);
+        self.last_insert = None;
+        let removed_len = range.len();
+
+        for offset in range.rev() {
+            match self.last_remove {
+                Some(ChangeRecord { offset: last_offset, piece_index }) if offset == last_offset => {
+                    if self.pieces[piece_index].length <= 1 {
+                        self.pieces.remove(piece_index);
+                        self.last_remove = piece_index.checked_sub(1).map(|i| {
+                            ChangeRecord {
+                                offset: offset.checked_sub(1).unwrap_or(0),
+                                piece_index: i,
+                            }
+                        });
+                    } else {
+                        self.pieces[piece_index] = self.pieces[piece_index].truncate_right(1);
+                        self.last_remove = Some(ChangeRecord {
+                            offset: offset.checked_sub(1).unwrap_or(0),
+                            piece_index,
+                        });
+                    }
+                }
+                _ => self.raw_remove(offset)
+            }
+
         }
+
+        self.length = self.length.checked_sub(removed_len).unwrap_or(0);
     }
 }
 
@@ -396,9 +366,9 @@ mod tests {
     fn cached_insertion() {
         let pt = &mut PieceTable::new(String::from("abcd"));
 
-        pt.insert_item_at('0', 3);
-        pt.insert_item_at('1', 4);
-        pt.insert_item_at('2', 6);
+        pt.insert("0", 3);
+        pt.insert("1", 4);
+        pt.insert("2", 6);
 
         assert_eq!(pt.iter().collect::<String>(), "abc01d2");
     }
@@ -407,33 +377,33 @@ mod tests {
     fn insert_head() {
         let pt = &mut PieceTable::new(String::from("abcd"));
 
-        pt.insert_item_at('0', 0);
+        pt.insert("0", 0);
         assert_eq!(pt.iter().collect::<String>(), "0abcd");
 
-        pt.insert_item_at('1', 1);
+        pt.insert("1", 1);
         assert_eq!(pt.iter().collect::<String>(), "01abcd");
 
-        pt.insert_item_at('2', 0);
+        pt.insert("2", 0);
         assert_eq!(pt.iter().collect::<String>(), "201abcd");
     }
 
     #[test]
     fn insert_body() {
         let pt = &mut PieceTable::new(String::from("abcd"));
-        pt.insert_items_at("012", 2);
+        pt.insert("012", 2);
         assert_eq!(pt.iter().collect::<String>(), "ab012cd");
 
-        pt.insert_item_at('3', 4);
+        pt.insert("3", 4);
         assert_eq!(pt.iter().collect::<String>(), "ab0132cd");
     }
 
     #[test]
     fn insert_end() {
         let pt = &mut PieceTable::new(String::from("abcd"));
-        pt.insert_items_at("012", 4);
+        pt.insert("012", 4);
         assert_eq!(pt.iter().collect::<String>(), "abcd012");
 
-        pt.insert_item_at('3', 7);
+        pt.insert("3", 7);
         assert_eq!(pt.iter().collect::<String>(), "abcd0123");
     }
 
@@ -512,27 +482,27 @@ mod tests {
     fn line_at() {
         let pt = &mut PieceTable::new(String::from("ab"));
         assert_eq!("ab", pt.line_at(0).content);
-        pt.insert_items_at("\nd0\n234567\n89", 4);
+        pt.insert("\nd0\n234567\n89", 4);
         assert_eq!("d0", pt.line_at(1).content);
         assert_eq!("234567", pt.line_at(2).content);
         assert_eq!("89", pt.line_at(3).content);
 
-        pt.insert_item_at('\n', 14);
+        pt.insert("\n", 14);
         assert_eq!("8", pt.line_at(3).content);
 
         let pt = &mut PieceTable::new(String::from("abcd"));
-        pt.insert_item_at('\n', 2);
+        pt.insert("\n", 2);
         assert_eq!("ab", pt.line_at(0).content);
         assert_eq!("cd", pt.line_at(1).content);
-        pt.remove_item_at(2);
-        pt.insert_item_at('\n', 2);
+        pt.remove(2..3);
+        pt.insert("\n", 2);
         assert_eq!("ab", pt.line_at(0).content);
         assert_eq!("cd", pt.line_at(1).content);
 
         let pt = &mut PieceTable::new(String::from("abcd"));
-        pt.insert_item_at('\n', 2);
-        pt.insert_item_at('c', 2);
-        pt.insert_item_at('c', 3);
+        pt.insert("\n", 2);
+        pt.insert("c", 2);
+        pt.insert("c", 3);
         assert_eq!("abcc", pt.line_at(0).content);
         assert_eq!("cd", pt.line_at(1).content);
 
@@ -542,14 +512,14 @@ mod tests {
 
         // Line not at index 0 where multiple pieces and start of next line in same piece
         let pt = &mut PieceTable::new(String::from("abcd\nef\nhi"));
-        pt.insert_items_at("\njk", 20);
+        pt.insert("\njk", 20);
         assert_eq!("ef", pt.line_at(1).content);
     }
 
     #[test]
     fn line_count() {
         let pt = &mut PieceTable::new(String::from("ab\nd"));
-        pt.insert_items_at("0\n2",4);
+        pt.insert("0\n2",4);
 
         assert_eq!(3, pt.line_count());
     }
@@ -586,10 +556,10 @@ mod tests {
         ];
         pt.length = pt.added.len() + pt.original.len();
 
-        pt.remove_item_at(0);
+        pt.remove(0..1);
         assert_eq!(pt.iter().collect::<String>(), "b012cd3");
 
-        pt.remove_items(0..3);
+        pt.remove(0..3);
         assert_eq!(pt.iter().collect::<String>(), "2cd3");
     }
 
@@ -625,10 +595,10 @@ mod tests {
         ];
         pt.length = pt.added.len() + pt.original.len();
 
-        pt.remove_item_at(3);
+        pt.remove(3..4);
         assert_eq!(pt.iter().collect::<String>(), "ab02cd3");
 
-        pt.remove_items(1..6);
+        pt.remove(1..6);
         assert_eq!(pt.iter().collect::<String>(), "a3");
     }
 
@@ -664,7 +634,7 @@ mod tests {
         ];
         pt.length = pt.added.len() + pt.original.len();
 
-        pt.remove_item_at(1);
+        pt.remove(1..2);
         assert_eq!(pt.iter().collect::<String>(), "a012cd3");
 
         // Remove linebreak from tail
@@ -698,7 +668,7 @@ mod tests {
         ];
         pt.length = pt.added.len() + pt.original.len();
 
-        pt.remove_item_at(7);
+        pt.remove(7..8);
         assert_eq!(pt.line_at(0).content, "ab012cd3");
     }
 }
