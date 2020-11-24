@@ -1,4 +1,5 @@
 use crate::{config::{EditorConfig, IndentationPreference}, str_utils};
+use crate::commands;
 use crate::cursor::Cursor;
 use crate::file;
 use crate::renderer;
@@ -16,13 +17,13 @@ use crossterm::{
 };
 
 pub struct Editor {
-    config: EditorConfig,
-    cursor: Cursor,
-    file_path: Option<PathBuf>,
-    running: bool,
+    pub config: EditorConfig,
+    pub cursor: Cursor,
+    pub file_path: Option<PathBuf>,
+    pub running: bool,
     screen: Stdout,
-    text_buffer: PieceTable,
-    window: Window,
+    pub text_buffer: PieceTable,
+    pub window: Window,
 }
 
 impl Editor {
@@ -67,171 +68,25 @@ impl Editor {
             );
 
             if let Ok(Event::Key(event)) = event::read() {
-                let command = self.map_key_to_command(event);
-                if let Some(command) = command {
-                    self.execute_command(command);
-                }
+                self.handle_key_event(event);
             }
         }
     }
 
-    fn execute_command(&mut self, command: Command) {
-        match command {
-            Command::CursorBackward => self.cursor_backward(),
-            Command::CursorDown => self.cursor_down(),
-            Command::CursorForward => self.cursor_forward(),
-            Command::CursorUp => self.cursor_up(),
-            Command::DeleteBackward => self.delete_backward(),
-            Command::Exit => self.exit(),
-            Command::InsertCharacter(c) => self.insert_character(c),
-            Command::InsertNewLine => self.insert_newline(),
-            Command::InsertTab => self.insert_tab(),
-            Command::Save => self.save(),
-        }
-    }
-
-    fn map_key_to_command(&self, key_event: KeyEvent) -> Option<Command> {
+    fn handle_key_event(&mut self, key_event: KeyEvent) {
         match (key_event.code, key_event.modifiers) {
-            (KeyCode::Char('q'), KeyModifiers::CONTROL) => Some(Command::Exit),
-            (KeyCode::Char('s'), KeyModifiers::CONTROL) => Some(Command::Save),
-            (KeyCode::Char(c), _) => Some(Command::InsertCharacter(c)),
-            (KeyCode::Backspace, _) => Some(Command::DeleteBackward),
-            (KeyCode::Down, _) => Some(Command::CursorDown),
-            (KeyCode::Enter, _) => Some(Command::InsertNewLine),
-            (KeyCode::Left, _) => Some(Command::CursorBackward),
-            (KeyCode::Right, _) => Some(Command::CursorForward),
-            (KeyCode::Up, _) => Some(Command::CursorUp),
-            (KeyCode::Tab, _) => Some(Command::InsertTab),
-            _ => None,
-        }
-    }
-
-    fn cursor_backward(&mut self) {
-        let current_line = self.text_buffer.line_at(self.cursor.line);
-        let previous_char_idx = str_utils::prev_char_idx(&current_line.content, self.cursor.byte_offset);
-        match previous_char_idx {
-            Some(i) => {
-                self.cursor.byte_offset = i;
-                self.cursor.character -= 1;
-            }
-            None => {
-                if self.cursor.line > 0 {
-                    let line_above = self.text_buffer.line_at(self.cursor.line - 1);
-                    self.cursor.byte_offset = line_above.content.len();
-                    self.cursor.character = line_above.content.chars().count();
-                    self.cursor.line -= 1;
-                }
-            }
-        }
-    }
-
-    fn cursor_down(&mut self) {
-        if self.cursor.line < self.text_buffer.line_count() - 1 {
-            let line_below = self.text_buffer.line_at(self.cursor.line + 1);
-            if line_below.len() < self.cursor.byte_offset
-            {
-                self.cursor.byte_offset = line_below.len();
-                self.cursor.character = line_below.content.chars().count();
-            }
-            self.cursor.line += 1;
-        }
-    }
-
-    fn cursor_forward(&mut self) {
-        let current_line = self.text_buffer.line_at(self.cursor.line);
-
-        let next_char_idx = str_utils::next_char_idx(&current_line.content, self.cursor.byte_offset);
-        match next_char_idx {
-            Some(i) => {
-                self.cursor.byte_offset = i;
-                self.cursor.character += 1;
-            }
-            None => {
-                if self.cursor.byte_offset < current_line.len() {
-                    self.cursor.byte_offset = current_line.len();
-                    self.cursor.character += 1;
-                } else if self.cursor.line < self.text_buffer.line_count() - 1 {
-                    self.cursor.byte_offset = 0;
-                    self.cursor.character = 0;
-                    self.cursor.line += 1;
-                }
-            }
-        }
-    }
-
-    fn cursor_up(&mut self) {
-        if self.cursor.line > 0 {
-            let line_above = self.text_buffer.line_at(self.cursor.line - 1);
-            if line_above.len() < self.cursor.byte_offset
-            {
-                self.cursor.byte_offset = line_above.len();
-                self.cursor.character = line_above.content.chars().count();
-            }
-            self.cursor.line -= 1;
-        }
-    }
-
-    fn delete_backward(&mut self) {
-        if self.cursor.byte_offset > 0 {
-            let current_line = self.text_buffer.line_at(self.cursor.line);
-            let prev_char_idx = str_utils::prev_char_idx(&current_line.content, self.cursor.byte_offset);
-            match prev_char_idx {
-                Some(i) => {
-                    self.text_buffer.remove(current_line.start_index + i..current_line.start_index + self.cursor.byte_offset);
-                    self.cursor.byte_offset = i;
-                    self.cursor.character -= 1;
-                },
-                None => {
-                    self.text_buffer.remove(current_line.start_index..current_line.start_index + self.cursor.byte_offset);
-                    self.cursor.byte_offset = 0;
-                    self.cursor.character = 0;
-                }
-            }
-        } else if self.cursor.line > 0 {
-            let line_above = self.text_buffer.line_at(self.cursor.line - 1);
-            self.text_buffer.remove(line_above.start_index + line_above.len()..line_above.start_index + line_above.len() + 1);
-            self.cursor.byte_offset = line_above.len();
-            self.cursor.character = line_above.content.chars().count();
-            self.cursor.line -= 1;
-        }
-    }
-
-    fn exit(&mut self) {
-        self.running = false;
-    }
-
-    fn insert_character(&mut self, c: char) {
-        let current_line = self.text_buffer.line_at(self.cursor.line);
-        self.text_buffer.insert(&c.to_string(), current_line.start_index + self.cursor.byte_offset);
-        self.cursor.byte_offset += c.len_utf8();
-        self.cursor.character += 1;
-    }
-
-    fn insert_newline(&mut self) {
-        let current_line = self.text_buffer.line_at(self.cursor.line);
-        self.text_buffer.insert("\n", current_line.start_index + self.cursor.byte_offset);
-        self.cursor.byte_offset = 0;
-        self.cursor.character = 0;
-        self.cursor.line += 1;
-    }
-
-    fn insert_tab(&mut self) {
-        let current_line = self.text_buffer.line_at(self.cursor.line);
-        let to_insert = match self.config.indentation {
-            IndentationPreference::Tabs => String::from("\t"),
-            IndentationPreference::Spaces => vec![' '; self.config.tab_width as usize].into_iter().collect()
+            (KeyCode::Char('q'), KeyModifiers::CONTROL) => commands::app::exit(self),
+            (KeyCode::Char('s'), KeyModifiers::CONTROL) => commands::app::save(self),
+            (KeyCode::Char(c), _) => commands::edit::insert_character(self, c),
+            (KeyCode::Backspace, _) => commands::edit::delete_backward(self),
+            (KeyCode::Enter, _) => commands::edit::insert_newline(self),
+            (KeyCode::Tab, _) => commands::edit::insert_tab(self),
+            (KeyCode::Left, _) => commands::cursor::cursor_backward(self),
+            (KeyCode::Right, _) => commands::cursor::cursor_forward(self),
+            (KeyCode::Up, _) => commands::cursor::cursor_up(self),
+            (KeyCode::Down, _) => commands::cursor::cursor_down(self),
+            _ => ()
         };
-
-        self.text_buffer
-            .insert(&to_insert, current_line.start_index + self.cursor.character);
-        self.cursor.byte_offset += to_insert.len();
-        self.cursor.character += to_insert.chars().count();
-    }
-
-    fn save(&mut self) {
-        if let Some(path) = &self.file_path {
-            file::save(path, self.text_buffer.all_content());
-        }
     }
 }
 
@@ -240,17 +95,4 @@ impl Drop for Editor {
         execute!(self.screen, LeaveAlternateScreen);
         terminal::disable_raw_mode();
     }
-}
-
-enum Command {
-    CursorBackward,
-    CursorDown,
-    CursorUp,
-    CursorForward,
-    DeleteBackward,
-    Exit,
-    InsertCharacter(char),
-    InsertNewLine,
-    InsertTab,
-    Save,
 }
